@@ -3,78 +3,117 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+
 void main() {
   runApp(const TMapsApp());
 }
 
+
 class TMapsApp extends StatelessWidget {
   const TMapsApp({super.key});
+
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'TMaps',
+      title: "TMaps",
       home: const HomePage(),
     );
   }
 }
 
+
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
+
+
 class _HomePageState extends State<HomePage> {
+
 
   final MapController _mapController = MapController();
 
-  LatLng _currentPosition = const LatLng(
-    45.0156,
-    78.3731,
-  );
 
 
-  // Теперь список можно менять
+  LatLng currentPosition =
+      const LatLng(45.0156, 78.3731);
+
+
+
   final List<LatLng> toilets = [
 
-    const LatLng(45.02061927734114, 78.40205998100085),
+    const LatLng(
+      45.02061927734114,
+      78.40205998100085,
+    ),
 
-    const LatLng(45.027421506503714, 78.39149158031506),
+    const LatLng(
+      45.027421506503714,
+      78.39149158031506,
+    ),
 
-    const LatLng(45.02743056417113, 78.39146797621179),
+    const LatLng(
+      45.02743056417113,
+      78.39146797621179,
+    ),
 
-    const LatLng(45.022541818055785, 78.39949128481774),
+    const LatLng(
+      45.022541818055785,
+      78.39949128481774,
+    ),
 
-    const LatLng(45.01680365476963, 78.38120726556873),
+    const LatLng(
+      45.01680365476963,
+      78.38120726556873,
+    ),
 
-    const LatLng(45.004216400888026, 78.34705805210724),
+    const LatLng(
+      45.004216400888026,
+      78.34705805210724,
+    ),
 
   ];
+
 
 
   @override
   void initState() {
     super.initState();
-    _getLocation();
+    getLocation();
   }
 
 
-  Future<void> _getLocation() async {
 
-    bool serviceEnabled =
+
+
+  Future<void> getLocation() async {
+
+
+    bool enabled =
         await Geolocator.isLocationServiceEnabled();
 
-    if (!serviceEnabled) return;
+
+    if (!enabled) {
+      return;
+    }
+
 
 
     LocationPermission permission =
         await Geolocator.checkPermission();
 
 
-    if (permission == LocationPermission.denied) {
+
+    if (permission ==
+        LocationPermission.denied) {
+
 
       permission =
           await Geolocator.requestPermission();
@@ -82,27 +121,41 @@ class _HomePageState extends State<HomePage> {
     }
 
 
-    if (permission == LocationPermission.deniedForever) {
+
+    if (permission ==
+        LocationPermission.deniedForever) {
+
       return;
+
     }
 
 
+
     Position position =
-        await Geolocator.getCurrentPosition();
+        await Geolocator.getCurrentPosition(
+          locationSettings:
+          const LocationSettings(
+            accuracy:
+            LocationAccuracy.high,
+          ),
+        );
+
 
 
     setState(() {
 
-      _currentPosition = LatLng(
-        position.latitude,
-        position.longitude,
-      );
+      currentPosition =
+          LatLng(
+            position.latitude,
+            position.longitude,
+          );
 
     });
 
 
+
     _mapController.move(
-      _currentPosition,
+      currentPosition,
       16,
     );
 
@@ -110,22 +163,37 @@ class _HomePageState extends State<HomePage> {
 
 
 
-  // Добавление туалета
-  void _addToilet() {
+
+
+
+  Future<void> addToilet() async {
+
+
+    // обновляем GPS перед добавлением
+
+    await getLocation();
+
+
 
     setState(() {
 
-      toilets.add(_currentPosition);
+      toilets.add(
+        currentPosition,
+      );
 
     });
 
 
-    ScaffoldMessenger.of(context).showSnackBar(
+
+    ScaffoldMessenger.of(context)
+        .showSnackBar(
 
       const SnackBar(
 
         content:
-        Text("🚻 Туалет добавлен!"),
+        Text(
+          "🚻 Новый туалет добавлен",
+        ),
 
       ),
 
@@ -135,34 +203,51 @@ class _HomePageState extends State<HomePage> {
 
 
 
+
+
+
+
   @override
   Widget build(BuildContext context) {
 
+
     return Scaffold(
+
 
       appBar: AppBar(
 
         title:
-        const Text("TMaps"),
+        const Text(
+          "TMaps 🚻",
+        ),
 
       ),
 
 
-      // Кнопка добавить туалет
-      floatingActionButton: Column(
+
+
+      floatingActionButton:
+
+
+      Column(
 
         mainAxisAlignment:
         MainAxisAlignment.end,
 
+
         children: [
+
 
 
           FloatingActionButton(
 
-            heroTag: "location",
+            heroTag:
+            "gps",
+
 
             onPressed:
-            _getLocation,
+            getLocation,
+
 
             child:
             const Icon(
@@ -172,19 +257,27 @@ class _HomePageState extends State<HomePage> {
           ),
 
 
-          const SizedBox(height: 15),
+
+          const SizedBox(
+            height: 15,
+          ),
+
 
 
 
           FloatingActionButton(
 
-            heroTag: "add",
+            heroTag:
+            "add",
 
-            onPressed:
-            _addToilet,
 
             backgroundColor:
             Colors.green,
+
+
+            onPressed:
+            addToilet,
+
 
             child:
             const Icon(
@@ -200,16 +293,23 @@ class _HomePageState extends State<HomePage> {
 
 
 
+
+
+
       body: FlutterMap(
+
 
         mapController:
         _mapController,
 
 
-        options: MapOptions(
+
+        options:
+        MapOptions(
 
           initialCenter:
-          _currentPosition,
+          currentPosition,
+
 
           initialZoom:
           15,
@@ -218,102 +318,144 @@ class _HomePageState extends State<HomePage> {
 
 
 
+
+
         children: [
+
+
+
 
 
           TileLayer(
 
             urlTemplate:
-            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+
+            "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+
 
             userAgentPackageName:
-            'com.tmaps.app',
+            "com.tmaps.app",
 
           ),
 
 
 
-          // Туалеты
+
+
 
           MarkerLayer(
+
 
             markers:
 
+
             toilets.map(
 
-                  (toilet) => Marker(
+                  (toilet) {
 
-                point:
-                toilet,
 
-                width:
-                40,
+                return Marker(
 
-                height:
-                40,
 
-                child:
-                const Icon(
+                  point:
+                  toilet,
 
-                  Icons.wc,
 
-                  color:
-                  Colors.green,
+                  width:
+                  45,
 
-                  size:
-                  35,
 
-                ),
+                  height:
+                  45,
 
-              ),
+
+                  child:
+                  const Icon(
+
+                    Icons.wc,
+
+
+                    color:
+                    Colors.green,
+
+
+                    size:
+                    38,
+
+                  ),
+
+
+                );
+
+
+              },
 
             ).toList(),
+
 
           ),
 
 
 
 
-          // Твоя точка
+
+
 
           MarkerLayer(
 
+
             markers: [
+
 
               Marker(
 
+
                 point:
-                _currentPosition,
+                currentPosition,
+
 
                 width:
                 50,
 
+
                 height:
                 50,
+
 
                 child:
                 const Icon(
 
-                  Icons.my_location,
+
+                  Icons.location_on,
+
 
                   color:
                   Colors.blue,
 
+
                   size:
-                  40,
+                  45,
+
 
                 ),
 
+
               ),
 
+
             ],
+
 
           ),
 
 
+
+
         ],
 
+
       ),
+
 
     );
 
