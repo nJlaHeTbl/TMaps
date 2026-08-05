@@ -1,3 +1,6 @@
 [build]
-command = "git clone https://github.com/flutter/flutter.git -b stable --depth 1 && export PATH=$PATH:$PWD/flutter/bin && flutter build web"
+command = "export PATH=$PATH:/opt/buildhome/flutter/bin && flutter build web"
 publish = "build/web"
+
+[build.environment]
+FLUTTER_VERSION = "3.44.8"
