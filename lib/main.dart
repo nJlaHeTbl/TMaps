@@ -1,20 +1,24 @@
-import 'dart:convert';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'core/app_config.dart';
+import 'core/app_theme.dart';
+import 'core/content_guard.dart';
+import 'data/toilet_repository.dart';
+import 'services/route_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Supabase.initialize(
-    url: 'https://fbvvaozvgledhiidvplw.supabase.co',
-    anonKey: 'sb_publishable_DdevGM-RfKW0wdmFezhFhw_23oVq39Y',
+    url: AppConfig.supabaseUrl,
+    publishableKey: AppConfig.supabasePublishableKey,
   );
 
   runApp(const TMapsApp());
@@ -25,63 +29,10 @@ class TMapsApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const green = Color(0xFF16A34A);
-    const darkGreen = Color(0xFF15803D);
-
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'TMaps',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: green,
-          brightness: Brightness.light,
-        ),
-        scaffoldBackgroundColor: Colors.white,
-        fontFamily: 'Roboto',
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: const Color(0xFFF7F8FA),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(
-              color: green.withOpacity(0.5),
-              width: 1.5,
-            ),
-          ),
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: green,
-            foregroundColor: Colors.white,
-            minimumSize: const Size(0, 52),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            textStyle: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        floatingActionButtonTheme: const FloatingActionButtonThemeData(
-          backgroundColor: green,
-          foregroundColor: Colors.white,
-        ),
-      ),
-      
+      theme: AppTheme.light,
       home: const HomePage(),
     );
   }
@@ -96,15 +47,13 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   static const Color green = Color(0xFF16A34A);
-  static const Color darkGreen = Color(0xFF15803D);
-  static const Color blue = Color(0xFF2563EB);
 
   final MapController _mapController = MapController();
+  final RouteService _routeService = const RouteService();
 
-  LatLng currentPosition = const LatLng(
-    45.0156,
-    78.3731,
-  );
+  late final ToiletRepository _toiletRepository;
+
+  LatLng currentPosition = const LatLng(45.0156, 78.3731);
 
   final List<Map<String, dynamic>> toilets = [];
 
@@ -112,15 +61,45 @@ class _HomePageState extends State<HomePage> {
 
   bool isAddingToilet = false;
   bool isBuildingRoute = false;
+  bool isFindingNearest = false;
+  bool showFreeOnly = false;
+  bool showWheelchairOnly = false;
+  bool showCommunityOnly = false;
 
   List<LatLng> routePoints = [];
 
   double? routeDistance;
   double? routeDuration;
 
+  List<Map<String, dynamic>> get visibleToilets {
+    return toilets
+        .where((toilet) {
+          if (showFreeOnly &&
+              (toilet['fee_known'] == false || toilet['is_free'] != true)) {
+            return false;
+          }
+
+          if (showWheelchairOnly && toilet['wheelchair'] != 'yes') {
+            return false;
+          }
+
+          if (showCommunityOnly && toilet['source'] == 'openstreetmap') {
+            return false;
+          }
+
+          return true;
+        })
+        .toList(growable: false);
+  }
+
+  bool get filtersActive =>
+      showFreeOnly || showWheelchairOnly || showCommunityOnly;
+
   @override
   void initState() {
     super.initState();
+
+    _toiletRepository = ToiletRepository(Supabase.instance.client);
 
     loadUsername();
     getLocation();
@@ -173,31 +152,21 @@ class _HomePageState extends State<HomePage> {
                   width: 68,
                   height: 68,
                   decoration: BoxDecoration(
-                    color: green.withOpacity(0.12),
+                    color: green.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.wc_rounded,
-                    color: green,
-                    size: 36,
-                  ),
+                  child: const Icon(Icons.wc_rounded, color: green, size: 36),
                 ),
                 const SizedBox(height: 18),
                 const Text(
                   'Добро пожаловать в TMaps',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Как тебя называть?',
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 15,
-                  ),
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
                 ),
                 const SizedBox(height: 20),
                 TextField(
@@ -218,14 +187,23 @@ class _HomePageState extends State<HomePage> {
                     onPressed: () async {
                       final name = controller.text.trim();
 
-                      if (name.isEmpty) return;
+                      final issue = ContentGuard.validateUsername(name);
 
-                      final prefs =
-                          await SharedPreferences.getInstance();
+                      if (issue != null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            behavior: SnackBarBehavior.floating,
+                            content: Text(issue),
+                          ),
+                        );
+                        return;
+                      }
+
+                      final prefs = await SharedPreferences.getInstance();
 
                       await prefs.setString('username', name);
 
-                      if (!mounted) return;
+                      if (!mounted || !context.mounted) return;
 
                       setState(() {
                         username = name;
@@ -250,64 +228,215 @@ class _HomePageState extends State<HomePage> {
   // GPS
   // =========================================================
 
-  Future<void> getLocation() async {
+  Future<bool> getLocation() async {
     try {
       final enabled = await Geolocator.isLocationServiceEnabled();
 
       if (!enabled) {
-        return;
+        return false;
       }
 
-      LocationPermission permission =
-          await Geolocator.checkPermission();
+      LocationPermission permission = await Geolocator.checkPermission();
 
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
 
       if (permission == LocationPermission.deniedForever) {
-        return;
+        return false;
       }
 
       if (permission == LocationPermission.denied) {
-        return;
+        return false;
       }
 
-      final Position position =
-          await Geolocator.getCurrentPosition(
+      final Position position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
         ),
       );
 
-      final newPosition = LatLng(
-        position.latitude,
-        position.longitude,
-      );
+      final newPosition = LatLng(position.latitude, position.longitude);
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
       setState(() {
         currentPosition = newPosition;
       });
 
-      _mapController.move(
-        currentPosition,
-        16,
-      );
+      _mapController.move(currentPosition, 16);
+      return true;
     } catch (e) {
       debugPrint('Ошибка GPS: $e');
+      return false;
     }
   }
 
   Future<void> centerOnUser() async {
-    await getLocation();
+    final locationFound = await getLocation();
 
-    if (!mounted) return;
+    if (!mounted || !locationFound) return;
 
-    _mapController.move(
-      currentPosition,
-      17,
+    _mapController.move(currentPosition, 17);
+  }
+
+  Future<void> showNearestToilet() async {
+    if (isFindingNearest) return;
+
+    setState(() {
+      isFindingNearest = true;
+    });
+
+    try {
+      if (visibleToilets.isEmpty) {
+        throw Exception('На карте пока нет туалетов');
+      }
+
+      final locationFound = await getLocation();
+      if (!locationFound) {
+        throw Exception('Не удалось определить местоположение');
+      }
+
+      Map<String, dynamic>? nearest;
+      double nearestDistance = double.infinity;
+
+      for (final toilet in visibleToilets) {
+        final distance = _distanceTo(toilet);
+        if (distance < nearestDistance) {
+          nearest = toilet;
+          nearestDistance = distance;
+        }
+      }
+
+      if (!mounted || nearest == null) return;
+
+      final point = LatLng(
+        (nearest['lat'] as num).toDouble(),
+        (nearest['lng'] as num).toDouble(),
+      );
+      _mapController.move(point, 17);
+      showToiletInfo(nearest);
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isFindingNearest = false;
+        });
+      }
+    }
+  }
+
+  double _distanceTo(Map<String, dynamic> toilet) {
+    return Geolocator.distanceBetween(
+      currentPosition.latitude,
+      currentPosition.longitude,
+      (toilet['lat'] as num).toDouble(),
+      (toilet['lng'] as num).toDouble(),
+    );
+  }
+
+  Future<void> showFilters() async {
+    var freeOnly = showFreeOnly;
+    var wheelchairOnly = showWheelchairOnly;
+    var communityOnly = showCommunityOnly;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Фильтры карты',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Только бесплатные'),
+                      subtitle: const Text('Скрыть платные и без цены'),
+                      value: freeOnly,
+                      onChanged: (value) {
+                        setSheetState(() => freeOnly = value);
+                      },
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Доступно для коляски'),
+                      subtitle: const Text(
+                        'Только точки с отметкой wheelchair',
+                      ),
+                      value: wheelchairOnly,
+                      onChanged: (value) {
+                        setSheetState(() => wheelchairOnly = value);
+                      },
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Только точки сообщества'),
+                      subtitle: const Text('Скрыть импорт OpenStreetMap'),
+                      value: communityOnly,
+                      onChanged: (value) {
+                        setSheetState(() => communityOnly = value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              setSheetState(() {
+                                freeOnly = false;
+                                wheelchairOnly = false;
+                                communityOnly = false;
+                              });
+                            },
+                            child: const Text('Сбросить'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 2,
+                          child: FilledButton(
+                            onPressed: () {
+                              setState(() {
+                                showFreeOnly = freeOnly;
+                                showWheelchairOnly = wheelchairOnly;
+                                showCommunityOnly = communityOnly;
+                              });
+                              Navigator.of(context).pop();
+                            },
+                            child: const Text('Применить'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -317,29 +446,19 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> loadToilets() async {
     try {
-      final response = await Supabase.instance.client
-          .from('toilets')
-          .select();
+      final loadedToilets = await _toiletRepository.fetchAll();
 
       if (!mounted) return;
 
       setState(() {
-        toilets.clear();
-
-        for (final toilet in response) {
-          toilets.add(
-            Map<String, dynamic>.from(toilet),
-          );
-        }
+        toilets
+          ..clear()
+          ..addAll(loadedToilets);
       });
 
-      debugPrint(
-        'Загружено туалетов: ${toilets.length}',
-      );
+      debugPrint('Загружено туалетов: ${toilets.length}');
     } catch (e) {
-      debugPrint(
-        'Ошибка загрузки туалетов: $e',
-      );
+      debugPrint('Ошибка загрузки туалетов: $e');
     }
   }
 
@@ -352,10 +471,10 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    if (username == null || username!.trim().isEmpty) {
+    if (ContentGuard.validateUsername(username) != null) {
       await showUsernameDialog();
 
-      if (username == null || username!.trim().isEmpty) {
+      if (ContentGuard.validateUsername(username) != null) {
         return;
       }
     }
@@ -365,7 +484,10 @@ class _HomePageState extends State<HomePage> {
         isAddingToilet = true;
       });
 
-      await getLocation();
+      final locationFound = await getLocation();
+      if (!locationFound) {
+        throw Exception('Не удалось определить местоположение');
+      }
 
       if (!mounted) return;
 
@@ -380,10 +502,7 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: Colors.transparent,
         builder: (context) {
           return StatefulBuilder(
-            builder: (
-              context,
-              setDialogState,
-            ) {
+            builder: (context, setDialogState) {
               return _AddToiletSheet(
                 isFree: isFree,
                 cleanliness: cleanliness,
@@ -411,6 +530,16 @@ class _HomePageState extends State<HomePage> {
                   Navigator.of(context).pop(false);
                 },
                 onAdd: () {
+                  final issue = ContentGuard.validateComment(comment);
+                  if (issue != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        behavior: SnackBarBehavior.floating,
+                        content: Text(issue),
+                      ),
+                    );
+                    return;
+                  }
                   Navigator.of(context).pop(true);
                 },
               );
@@ -429,28 +558,20 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      final insertedToilet = await Supabase.instance.client
-          .from('toilets')
-          .insert({
-            'lat': currentPosition.latitude,
-            'lng': currentPosition.longitude,
-            'username': username,
-            'is_free': isFree,
-            'cleanliness': cleanliness,
-            'condition': condition,
-            'comment': comment.trim().isEmpty
-                ? null
-                : comment.trim(),
-          })
-          .select()
-          .single();
+      final insertedToilet = await _toiletRepository.add(
+        latitude: currentPosition.latitude,
+        longitude: currentPosition.longitude,
+        username: username!,
+        isFree: isFree,
+        cleanliness: cleanliness,
+        condition: condition,
+        comment: comment.trim().isEmpty ? null : comment.trim(),
+      );
 
       if (!mounted) return;
 
       setState(() {
-        toilets.add(
-          Map<String, dynamic>.from(insertedToilet),
-        );
+        toilets.add(insertedToilet);
 
         isAddingToilet = false;
       });
@@ -462,15 +583,11 @@ class _HomePageState extends State<HomePage> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          content: Text(
-            '🚻 Туалет добавлен от имени $username',
-          ),
+          content: Text('🚻 Туалет добавлен от имени $username'),
         ),
       );
     } catch (e) {
-      debugPrint(
-        'Ошибка добавления туалета: $e',
-      );
+      debugPrint('Ошибка добавления туалета: $e');
 
       if (!mounted) return;
 
@@ -486,9 +603,7 @@ class _HomePageState extends State<HomePage> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          content: Text(
-            '❌ Ошибка: $e',
-          ),
+          content: Text('❌ Ошибка: $e'),
         ),
       );
     }
@@ -498,26 +613,19 @@ class _HomePageState extends State<HomePage> {
   // КАРТОЧКА ТУАЛЕТА
   // =========================================================
 
-  void showToiletInfo(
-    Map<String, dynamic> toilet,
-  ) {
+  void showToiletInfo(Map<String, dynamic> toilet) {
     final String author =
-        toilet['username']?.toString() ??
-            'Неизвестный пользователь';
+        toilet['username']?.toString() ?? 'Неизвестный пользователь';
 
-    final bool isFree =
-        toilet['is_free'] == true;
+    final bool isFree = toilet['is_free'] == true;
+    final bool feeKnown = toilet['fee_known'] != false;
 
-    final int cleanliness =
-        (toilet['cleanliness'] as num?)?.toInt() ?? 5;
+    final int cleanliness = (toilet['cleanliness'] as num?)?.toInt() ?? 5;
 
-    final String condition =
-        toilet['condition']?.toString() ??
-            'Хорошее';
+    final String condition = toilet['condition']?.toString() ?? 'Хорошее';
 
-    final String comment =
-        toilet['comment']?.toString() ??
-            '';
+    final String comment = toilet['comment']?.toString() ?? '';
+    final String distance = formatDistance(_distanceTo(toilet));
 
     showModalBottomSheet(
       context: context,
@@ -528,9 +636,11 @@ class _HomePageState extends State<HomePage> {
         return _ToiletInfoSheet(
           author: author,
           isFree: isFree,
+          feeKnown: feeKnown,
           cleanliness: cleanliness,
           condition: condition,
           comment: comment,
+          distance: distance,
           isBuildingRoute: isBuildingRoute,
           onRoute: () async {
             Navigator.of(context).pop();
@@ -548,9 +658,7 @@ class _HomePageState extends State<HomePage> {
   // ПОСТРОЕНИЕ МАРШРУТА
   // =========================================================
 
-  Future<void> buildRoute(
-    Map<String, dynamic> toilet,
-  ) async {
+  Future<void> buildRoute(Map<String, dynamic> toilet) async {
     try {
       setState(() {
         isBuildingRoute = true;
@@ -559,93 +667,32 @@ class _HomePageState extends State<HomePage> {
         routeDuration = null;
       });
 
-      await getLocation();
+      final locationFound = await getLocation();
+      if (!locationFound) {
+        throw Exception('Не удалось определить местоположение');
+      }
 
-      final double toiletLat =
-          (toilet['lat'] as num).toDouble();
-
-      final double toiletLng =
-          (toilet['lng'] as num).toDouble();
-
-      final String url =
-          'https://router.project-osrm.org/route/v1/driving/'
-          '${currentPosition.longitude},'
-          '${currentPosition.latitude};'
-          '$toiletLng,$toiletLat'
-          '?overview=full&geometries=geojson';
-
-      debugPrint('Маршрут: $url');
-
-      final response = await http.get(
-        Uri.parse(url),
+      final double toiletLat = (toilet['lat'] as num).toDouble();
+      final double toiletLng = (toilet['lng'] as num).toDouble();
+      final result = await _routeService.build(
+        from: currentPosition,
+        to: LatLng(toiletLat, toiletLng),
       );
-
-      if (response.statusCode != 200) {
-        throw Exception(
-          'Ошибка маршрутизатора: ${response.statusCode}',
-        );
-      }
-
-      final data = jsonDecode(response.body);
-
-      if (data['code'] != 'Ok') {
-        throw Exception('Маршрут не найден');
-      }
-
-      final routes = data['routes'] as List;
-
-      if (routes.isEmpty) {
-        throw Exception('Маршрут не найден');
-      }
-
-      final route = routes.first;
-
-      final geometry = route['geometry'];
-
-      final coordinates =
-          geometry['coordinates'] as List;
-
-      final List<LatLng> points = [];
-
-      for (final coordinate in coordinates) {
-        final double lng =
-            (coordinate[0] as num).toDouble();
-
-        final double lat =
-            (coordinate[1] as num).toDouble();
-
-        points.add(
-          LatLng(
-            lat,
-            lng,
-          ),
-        );
-      }
-
-      final double distance =
-          (route['distance'] as num).toDouble();
-
-      final double duration =
-          (route['duration'] as num).toDouble();
 
       if (!mounted) return;
 
       setState(() {
-        routePoints = points;
-        routeDistance = distance;
-        routeDuration = duration;
+        routePoints = result.points;
+        routeDistance = result.distance;
+        routeDuration = result.duration;
         isBuildingRoute = false;
       });
 
       if (routePoints.isNotEmpty) {
-        final bounds =
-            LatLngBounds.fromPoints(routePoints);
+        final bounds = LatLngBounds.fromPoints(routePoints);
 
         _mapController.fitCamera(
-          CameraFit.bounds(
-            bounds: bounds,
-            padding: const EdgeInsets.all(80),
-          ),
+          CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(80)),
         );
       }
 
@@ -657,15 +704,12 @@ class _HomePageState extends State<HomePage> {
             borderRadius: BorderRadius.circular(16),
           ),
           content: Text(
-            '🧭 Маршрут построен — '
-            '${formatDistance(distance)}',
+            '🧭 Маршрут построен — ${formatDistance(result.distance)}',
           ),
         ),
       );
     } catch (e) {
-      debugPrint(
-        'Ошибка маршрута: $e',
-      );
+      debugPrint('Ошибка маршрута: $e');
 
       if (!mounted) return;
 
@@ -681,9 +725,7 @@ class _HomePageState extends State<HomePage> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          content: Text(
-            '❌ Не удалось построить маршрут: $e',
-          ),
+          content: Text('❌ Не удалось построить маршрут: $e'),
         ),
       );
     }
@@ -706,8 +748,7 @@ class _HomePageState extends State<HomePage> {
   // =========================================================
 
   String formatDuration(double seconds) {
-    final int minutes =
-        (seconds / 60).round();
+    final int minutes = (seconds / 60).round();
 
     if (minutes < 60) {
       return '$minutes мин';
@@ -715,8 +756,7 @@ class _HomePageState extends State<HomePage> {
 
     final int hours = minutes ~/ 60;
 
-    final int remainingMinutes =
-        minutes % 60;
+    final int remainingMinutes = minutes % 60;
 
     if (remainingMinutes == 0) {
       return '$hours ч';
@@ -751,7 +791,6 @@ class _HomePageState extends State<HomePage> {
           // ===================================================
           // КАРТА
           // ===================================================
-
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
@@ -762,16 +801,19 @@ class _HomePageState extends State<HomePage> {
             ),
             children: [
               TileLayer(
-                urlTemplate:
-                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName:
-                    'com.tmaps.app',
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.tmaps.app',
+              ),
+              const RichAttributionWidget(
+                attributions: [
+                  TextSourceAttribution('OpenStreetMap contributors'),
+                ],
+                popupInitialDisplayDuration: Duration(seconds: 5),
               ),
 
               // =================================================
               // МАРШРУТ
               // =================================================
-
               if (routePoints.length >= 2)
                 PolylineLayer(
                   polylines: [
@@ -780,51 +822,39 @@ class _HomePageState extends State<HomePage> {
                       strokeWidth: 8,
                       color: Colors.white,
                     ),
-                    Polyline(
-                      points: routePoints,
-                      strokeWidth: 5,
-                      color: green,
-                    ),
+                    Polyline(points: routePoints, strokeWidth: 5, color: green),
                   ],
                 ),
 
               // =================================================
               // ТУАЛЕТЫ
               // =================================================
-
               MarkerLayer(
-                markers: toilets.map(
-                  (toilet) {
-                    final double lat =
-                        (toilet['lat'] as num).toDouble();
+                markers: visibleToilets.map((toilet) {
+                  final double lat = (toilet['lat'] as num).toDouble();
 
-                    final double lng =
-                        (toilet['lng'] as num).toDouble();
+                  final double lng = (toilet['lng'] as num).toDouble();
 
-                    final bool isFree =
-                        toilet['is_free'] == true;
+                  final bool isFree = toilet['is_free'] == true;
+                  final bool feeKnown = toilet['fee_known'] != false;
 
-                    return Marker(
-                      point: LatLng(lat, lng),
-                      width: 58,
-                      height: 68,
-                      child: GestureDetector(
-                        onTap: () {
-                          showToiletInfo(toilet);
-                        },
-                        child: _ToiletMarker(
-                          isFree: isFree,
-                        ),
-                      ),
-                    );
-                  },
-                ).toList(),
+                  return Marker(
+                    point: LatLng(lat, lng),
+                    width: 58,
+                    height: 68,
+                    child: GestureDetector(
+                      onTap: () {
+                        showToiletInfo(toilet);
+                      },
+                      child: _ToiletMarker(isFree: isFree, feeKnown: feeKnown),
+                    ),
+                  );
+                }).toList(),
               ),
 
               // =================================================
               // ТЕКУЩЕЕ МЕСТОПОЛОЖЕНИЕ
               // =================================================
-
               MarkerLayer(
                 markers: [
                   Marker(
@@ -841,22 +871,16 @@ class _HomePageState extends State<HomePage> {
           // ===================================================
           // ВЕРХНЯЯ ПАНЕЛЬ
           // ===================================================
-
           Positioned(
             top: 0,
             left: 0,
             right: 0,
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  14,
-                  10,
-                  14,
-                  0,
-                ),
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
                 child: _GlassHeader(
                   username: username,
-                  toiletCount: toilets.length,
+                  toiletCount: visibleToilets.length,
                 ),
               ),
             ),
@@ -865,11 +889,9 @@ class _HomePageState extends State<HomePage> {
           // ===================================================
           // КНОПКИ СПРАВА
           // ===================================================
-
           Positioned(
             right: 16,
-            bottom:
-                routePoints.length >= 2 ? 150 : 28,
+            bottom: routePoints.length >= 2 ? 150 : 28,
             child: SafeArea(
               child: Column(
                 children: [
@@ -880,18 +902,41 @@ class _HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(height: 12),
                   _MapActionButton(
+                    icon: Icons.filter_alt_rounded,
+                    onPressed: showFilters,
+                    tooltip: 'Фильтры',
+                    backgroundColor: filtersActive
+                        ? const Color(0xFFDCFCE7)
+                        : Colors.white,
+                    foregroundColor: filtersActive
+                        ? green
+                        : const Color(0xFF1F2937),
+                  ),
+                  const SizedBox(height: 12),
+                  _MapActionButton(
+                    icon: Icons.near_me_rounded,
+                    onPressed: isFindingNearest ? null : showNearestToilet,
+                    tooltip: 'Ближайший туалет',
+                    child: isFindingNearest
+                        ? const SizedBox(
+                            width: 21,
+                            height: 21,
+                            child: CircularProgressIndicator(strokeWidth: 2.4),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  _MapActionButton(
                     icon: Icons.add_rounded,
                     backgroundColor: green,
                     foregroundColor: Colors.white,
                     size: 62,
-                    onPressed:
-                        isAddingToilet ? null : addToilet,
+                    onPressed: isAddingToilet ? null : addToilet,
                     child: isAddingToilet
                         ? const SizedBox(
                             width: 23,
                             height: 23,
-                            child:
-                                CircularProgressIndicator(
+                            child: CircularProgressIndicator(
                               strokeWidth: 2.5,
                               color: Colors.white,
                             ),
@@ -906,23 +951,16 @@ class _HomePageState extends State<HomePage> {
           // ===================================================
           // СЧЕТЧИК ТУАЛЕТОВ
           // ===================================================
-
-          if (toilets.isNotEmpty)
+          if (visibleToilets.isNotEmpty)
             Positioned(
               left: 16,
-              bottom:
-                  routePoints.length >= 2 ? 150 : 28,
-              child: SafeArea(
-                child: _MapCounter(
-                  count: toilets.length,
-                ),
-              ),
+              bottom: routePoints.length >= 2 ? 150 : 28,
+              child: SafeArea(child: _MapCounter(count: visibleToilets.length)),
             ),
 
           // ===================================================
           // ПАНЕЛЬ МАРШРУТА
           // ===================================================
-
           if (routePoints.length >= 2 &&
               routeDistance != null &&
               routeDuration != null)
@@ -932,10 +970,8 @@ class _HomePageState extends State<HomePage> {
               bottom: 12,
               child: SafeArea(
                 child: _RoutePanel(
-                  distance:
-                      formatDistance(routeDistance!),
-                  duration:
-                      formatDuration(routeDuration!),
+                  distance: formatDistance(routeDistance!),
+                  duration: formatDuration(routeDuration!),
                   onClose: clearRoute,
                 ),
               ),
@@ -954,29 +990,20 @@ class _GlassHeader extends StatelessWidget {
   final String? username;
   final int toiletCount;
 
-  const _GlassHeader({
-    required this.username,
-    required this.toiletCount,
-  });
+  const _GlassHeader({required this.username, required this.toiletCount});
 
   @override
   Widget build(BuildContext context) {
     return Material(
       elevation: 10,
-      shadowColor: Colors.black.withOpacity(0.15),
-      color: Colors.white.withOpacity(0.96),
+      shadowColor: Colors.black.withValues(alpha: 0.15),
+      color: Colors.white.withValues(alpha: 0.96),
       borderRadius: BorderRadius.circular(24),
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 15,
-          vertical: 13,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: Colors.white,
-            width: 1.5,
-          ),
+          border: Border.all(color: Colors.white, width: 1.5),
         ),
         child: Row(
           children: [
@@ -985,19 +1012,14 @@ class _GlassHeader extends StatelessWidget {
               height: 48,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [
-                    Color(0xFF22C55E),
-                    Color(0xFF15803D),
-                  ],
+                  colors: [Color(0xFF22C55E), Color(0xFF15803D)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
-                borderRadius:
-                    BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF16A34A)
-                        .withOpacity(0.25),
+                    color: const Color(0xFF16A34A).withValues(alpha: 0.25),
                     blurRadius: 12,
                     offset: const Offset(0, 5),
                   ),
@@ -1012,8 +1034,7 @@ class _GlassHeader extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
                     'TMaps',
@@ -1040,18 +1061,14 @@ class _GlassHeader extends StatelessWidget {
             ),
             if (username != null)
               Container(
-                constraints: const BoxConstraints(
-                  maxWidth: 125,
-                ),
-                padding:
-                    const EdgeInsets.symmetric(
+                constraints: const BoxConstraints(maxWidth: 125),
+                padding: const EdgeInsets.symmetric(
                   horizontal: 11,
                   vertical: 9,
                 ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF1F5F3),
-                  borderRadius:
-                      BorderRadius.circular(15),
+                  borderRadius: BorderRadius.circular(15),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1065,8 +1082,7 @@ class _GlassHeader extends StatelessWidget {
                     Flexible(
                       child: Text(
                         username!,
-                        overflow:
-                            TextOverflow.ellipsis,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
@@ -1089,15 +1105,17 @@ class _GlassHeader extends StatelessWidget {
 
 class _ToiletMarker extends StatelessWidget {
   final bool isFree;
+  final bool feeKnown;
 
-  const _ToiletMarker({
-    required this.isFree,
-  });
+  const _ToiletMarker({required this.isFree, required this.feeKnown});
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        isFree ? const Color(0xFF16A34A) : Colors.orange.shade700;
+    final color = !feeKnown
+        ? Colors.blueGrey.shade600
+        : isFree
+        ? const Color(0xFF16A34A)
+        : Colors.orange.shade700;
 
     return Column(
       children: [
@@ -1107,31 +1125,22 @@ class _ToiletMarker extends StatelessWidget {
           decoration: BoxDecoration(
             color: color,
             shape: BoxShape.circle,
-            border: Border.all(
-              color: Colors.white,
-              width: 3,
-            ),
+            border: Border.all(color: Colors.white, width: 3),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.22),
+                color: Colors.black.withValues(alpha: 0.22),
                 blurRadius: 7,
                 offset: const Offset(0, 3),
               ),
             ],
           ),
-          child: const Icon(
-            Icons.wc_rounded,
-            color: Colors.white,
-            size: 26,
-          ),
+          child: const Icon(Icons.wc_rounded, color: Colors.white, size: 26),
         ),
         Transform.translate(
           offset: const Offset(0, -5),
           child: CustomPaint(
             size: const Size(12, 8),
-            painter: _MarkerTrianglePainter(
-              color: color,
-            ),
+            painter: _MarkerTrianglePainter(color: color),
           ),
         ),
       ],
@@ -1139,38 +1148,26 @@ class _ToiletMarker extends StatelessWidget {
   }
 }
 
-class _MarkerTrianglePainter
-    extends CustomPainter {
+class _MarkerTrianglePainter extends CustomPainter {
   final Color color;
 
-  const _MarkerTrianglePainter({
-    required this.color,
-  });
+  const _MarkerTrianglePainter({required this.color});
 
   @override
-  void paint(
-    Canvas canvas,
-    Size size,
-  ) {
-    final paint = Paint()
-      ..color = color;
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
 
     final path = ui.Path()
       ..moveTo(0, 0)
       ..lineTo(size.width, 0)
-      ..lineTo(
-        size.width,
-        size.height,
-      )
+      ..lineTo(size.width, size.height)
       ..close();
 
     canvas.drawPath(path, paint);
   }
 
   @override
-  bool shouldRepaint(
-    covariant _MarkerTrianglePainter oldDelegate,
-  ) {
+  bool shouldRepaint(covariant _MarkerTrianglePainter oldDelegate) {
     return oldDelegate.color != color;
   }
 }
@@ -1179,16 +1176,14 @@ class _MarkerTrianglePainter
 // МАРКЕР ПОЛЬЗОВАТЕЛЯ
 // =============================================================
 
-class _UserLocationMarker
-    extends StatelessWidget {
+class _UserLocationMarker extends StatelessWidget {
   const _UserLocationMarker();
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF2563EB)
-            .withOpacity(0.16),
+        color: const Color(0xFF2563EB).withValues(alpha: 0.16),
         shape: BoxShape.circle,
       ),
       padding: const EdgeInsets.all(8),
@@ -1198,7 +1193,7 @@ class _UserLocationMarker
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.18),
+              color: Colors.black.withValues(alpha: 0.18),
               blurRadius: 5,
             ),
           ],
@@ -1219,8 +1214,7 @@ class _UserLocationMarker
 // КНОПКА КАРТЫ
 // =============================================================
 
-class _MapActionButton
-    extends StatelessWidget {
+class _MapActionButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onPressed;
   final String? tooltip;
@@ -1241,10 +1235,9 @@ class _MapActionButton
 
   @override
   Widget build(BuildContext context) {
-    return Material(
+    final button = Material(
       elevation: 9,
-      shadowColor:
-          Colors.black.withOpacity(0.22),
+      shadowColor: Colors.black.withValues(alpha: 0.22),
       color: backgroundColor,
       shape: const CircleBorder(),
       child: InkWell(
@@ -1254,16 +1247,14 @@ class _MapActionButton
           width: size,
           height: size,
           child: Center(
-            child: child ??
-                Icon(
-                  icon,
-                  size: 25,
-                  color: foregroundColor,
-                ),
+            child: child ?? Icon(icon, size: 25, color: foregroundColor),
           ),
         ),
       ),
     );
+
+    if (tooltip == null) return button;
+    return Tooltip(message: tooltip!, child: button);
   }
 }
 
@@ -1274,9 +1265,7 @@ class _MapActionButton
 class _MapCounter extends StatelessWidget {
   final int count;
 
-  const _MapCounter({
-    required this.count,
-  });
+  const _MapCounter({required this.count});
 
   @override
   Widget build(BuildContext context) {
@@ -1285,10 +1274,7 @@ class _MapCounter extends StatelessWidget {
       color: Colors.white,
       borderRadius: BorderRadius.circular(17),
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 13,
-          vertical: 10,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1300,10 +1286,7 @@ class _MapCounter extends StatelessWidget {
             const SizedBox(width: 6),
             Text(
               '$count',
-              style: const TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 14,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
             ),
           ],
         ),
@@ -1316,8 +1299,7 @@ class _MapCounter extends StatelessWidget {
 // ПАНЕЛЬ МАРШРУТА
 // =============================================================
 
-class _RoutePanel
-    extends StatelessWidget {
+class _RoutePanel extends StatelessWidget {
   final String distance;
   final String duration;
   final VoidCallback onClose;
@@ -1335,12 +1317,7 @@ class _RoutePanel
       color: Colors.white,
       borderRadius: BorderRadius.circular(22),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          14,
-          12,
-          8,
-          12,
-        ),
+        padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
         child: Row(
           children: [
             Container(
@@ -1348,13 +1325,9 @@ class _RoutePanel
               height: 50,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [
-                    Color(0xFF22C55E),
-                    Color(0xFF15803D),
-                  ],
+                  colors: [Color(0xFF22C55E), Color(0xFF15803D)],
                 ),
-                borderRadius:
-                    BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(16),
               ),
               child: const Icon(
                 Icons.directions_rounded,
@@ -1365,8 +1338,7 @@ class _RoutePanel
             const SizedBox(width: 12),
             Expanded(
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     distance,
@@ -1390,12 +1362,9 @@ class _RoutePanel
             IconButton(
               onPressed: onClose,
               style: IconButton.styleFrom(
-                backgroundColor:
-                    const Color(0xFFF3F4F6),
+                backgroundColor: const Color(0xFFF3F4F6),
               ),
-              icon: const Icon(
-                Icons.close_rounded,
-              ),
+              icon: const Icon(Icons.close_rounded),
             ),
           ],
         ),
@@ -1408,13 +1377,14 @@ class _RoutePanel
 // CARD / BOTTOM SHEET ТУАЛЕТА
 // =============================================================
 
-class _ToiletInfoSheet
-    extends StatelessWidget {
+class _ToiletInfoSheet extends StatelessWidget {
   final String author;
   final bool isFree;
+  final bool feeKnown;
   final int cleanliness;
   final String condition;
   final String comment;
+  final String distance;
   final bool isBuildingRoute;
   final VoidCallback onRoute;
   final VoidCallback onClose;
@@ -1422,9 +1392,11 @@ class _ToiletInfoSheet
   const _ToiletInfoSheet({
     required this.author,
     required this.isFree,
+    required this.feeKnown,
     required this.cleanliness,
     required this.condition,
     required this.comment,
+    required this.distance,
     required this.isBuildingRoute,
     required this.onRoute,
     required this.onClose,
@@ -1439,7 +1411,11 @@ class _ToiletInfoSheet
       return Colors.orange.shade700;
     }
 
-    return Colors.red.shade600;
+    if (condition == 'Плохое') {
+      return Colors.red.shade600;
+    }
+
+    return Colors.blueGrey.shade600;
   }
 
   @override
@@ -1448,22 +1424,14 @@ class _ToiletInfoSheet
       child: Container(
         decoration: const BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(30),
-          ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
         ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            20,
-            10,
-            20,
-            20,
-          ),
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Center(
                   child: Container(
@@ -1471,8 +1439,7 @@ class _ToiletInfoSheet
                     height: 5,
                     decoration: BoxDecoration(
                       color: Colors.grey.shade300,
-                      borderRadius:
-                          BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
                 ),
@@ -1485,18 +1452,12 @@ class _ToiletInfoSheet
                       width: 62,
                       height: 62,
                       decoration: BoxDecoration(
-                        gradient:
-                            const LinearGradient(
-                          colors: [
-                            Color(0xFFDCFCE7),
-                            Color(0xFFBBF7D0),
-                          ],
-                          begin:
-                              Alignment.topLeft,
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFDCFCE7), Color(0xFFBBF7D0)],
+                          begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
-                        borderRadius:
-                            BorderRadius.circular(19),
+                        borderRadius: BorderRadius.circular(19),
                       ),
                       child: const Icon(
                         Icons.wc_rounded,
@@ -1507,34 +1468,27 @@ class _ToiletInfoSheet
                     const SizedBox(width: 15),
                     const Expanded(
                       child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             'Туалет',
                             style: TextStyle(
                               fontSize: 24,
-                              fontWeight:
-                                  FontWeight.w900,
+                              fontWeight: FontWeight.w900,
                               letterSpacing: -0.5,
                             ),
                           ),
                           SizedBox(height: 4),
                           Text(
                             'Общественное место',
-                            style: TextStyle(
-                              color: Colors.grey,
-                              fontSize: 14,
-                            ),
+                            style: TextStyle(color: Colors.grey, fontSize: 14),
                           ),
                         ],
                       ),
                     ),
                     IconButton(
                       onPressed: onClose,
-                      icon: const Icon(
-                        Icons.close_rounded,
-                      ),
+                      icon: const Icon(Icons.close_rounded),
                     ),
                   ],
                 ),
@@ -1547,27 +1501,32 @@ class _ToiletInfoSheet
                     Expanded(
                       child: _InfoCard(
                         icon: Icons.star_rounded,
-                        iconColor: Colors.amber.shade700,
+                        iconColor: cleanliness > 0
+                            ? Colors.amber.shade700
+                            : Colors.blueGrey.shade600,
                         title: 'Чистота',
-                        value:
-                            '$cleanliness / 5',
+                        value: cleanliness > 0
+                            ? '$cleanliness / 5'
+                            : 'Не указано',
                       ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: _InfoCard(
-                        icon: isFree
-                            ? Icons
-                                .check_circle_rounded
-                            : Icons
-                                .payments_rounded,
-                        iconColor: isFree
-                            ? const Color(
-                                0xFF16A34A,
-                              )
+                        icon: !feeKnown
+                            ? Icons.help_outline_rounded
+                            : isFree
+                            ? Icons.check_circle_rounded
+                            : Icons.payments_rounded,
+                        iconColor: !feeKnown
+                            ? Colors.blueGrey.shade600
+                            : isFree
+                            ? const Color(0xFF16A34A)
                             : Colors.orange.shade700,
                         title: 'Стоимость',
-                        value: isFree
+                        value: !feeKnown
+                            ? 'Не указано'
+                            : isFree
                             ? 'Бесплатно'
                             : 'Платный',
                       ),
@@ -1581,10 +1540,8 @@ class _ToiletInfoSheet
                   children: [
                     Expanded(
                       child: _InfoCard(
-                        icon:
-                            Icons.health_and_safety_rounded,
-                        iconColor:
-                            conditionColor,
+                        icon: Icons.health_and_safety_rounded,
+                        iconColor: conditionColor,
                         title: 'Состояние',
                         value: condition,
                       ),
@@ -1592,10 +1549,8 @@ class _ToiletInfoSheet
                     const SizedBox(width: 10),
                     Expanded(
                       child: _InfoCard(
-                        icon:
-                            Icons.person_rounded,
-                        iconColor:
-                            const Color(0xFF2563EB),
+                        icon: Icons.person_rounded,
+                        iconColor: const Color(0xFF2563EB),
                         title: 'Добавил',
                         value: author,
                       ),
@@ -1603,37 +1558,39 @@ class _ToiletInfoSheet
                   ],
                 ),
 
+                const SizedBox(height: 10),
+
+                _InfoCard(
+                  icon: Icons.near_me_rounded,
+                  iconColor: const Color(0xFF2563EB),
+                  title: 'Расстояние по прямой',
+                  value: distance,
+                ),
+
                 if (comment.isNotEmpty) ...[
                   const SizedBox(height: 18),
                   Container(
                     width: double.infinity,
-                    padding:
-                        const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color:
-                          const Color(0xFFF7F8FA),
-                      borderRadius:
-                          BorderRadius.circular(18),
+                      color: const Color(0xFFF7F8FA),
+                      borderRadius: BorderRadius.circular(18),
                     ),
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
                             Icon(
-                              Icons
-                                  .chat_bubble_outline_rounded,
+                              Icons.chat_bubble_outline_rounded,
                               size: 19,
-                              color: Colors
-                                  .grey.shade700,
+                              color: Colors.grey.shade700,
                             ),
                             const SizedBox(width: 8),
                             const Text(
                               'Комментарий',
                               style: TextStyle(
-                                fontWeight:
-                                    FontWeight.w800,
+                                fontWeight: FontWeight.w800,
                                 fontSize: 15,
                               ),
                             ),
@@ -1645,8 +1602,7 @@ class _ToiletInfoSheet
                           style: TextStyle(
                             fontSize: 14.5,
                             height: 1.4,
-                            color: Colors
-                                .grey.shade700,
+                            color: Colors.grey.shade700,
                           ),
                         ),
                       ],
@@ -1659,24 +1615,17 @@ class _ToiletInfoSheet
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed:
-                        isBuildingRoute
-                            ? null
-                            : onRoute,
+                    onPressed: isBuildingRoute ? null : onRoute,
                     icon: isBuildingRoute
                         ? const SizedBox(
                             width: 20,
                             height: 20,
-                            child:
-                                CircularProgressIndicator(
+                            child: CircularProgressIndicator(
                               strokeWidth: 2.5,
                               color: Colors.white,
                             ),
                           )
-                        : const Icon(
-                            Icons
-                                .directions_rounded,
-                          ),
+                        : const Icon(Icons.directions_rounded),
                     label: Text(
                       isBuildingRoute
                           ? 'Строим маршрут...'
@@ -1724,45 +1673,34 @@ class _InfoCard extends StatelessWidget {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.12),
-              borderRadius:
-                  BorderRadius.circular(12),
+              color: iconColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(
-              icon,
-              color: iconColor,
-              size: 20,
-            ),
+            child: Icon(icon, color: iconColor, size: 20),
           ),
           const SizedBox(width: 9),
           Expanded(
             child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
                   maxLines: 1,
-                  overflow:
-                      TextOverflow.ellipsis,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 11,
-                    color:
-                        Colors.grey.shade600,
-                    fontWeight:
-                        FontWeight.w600,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   value,
                   maxLines: 1,
-                  overflow:
-                      TextOverflow.ellipsis,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 13,
-                    fontWeight:
-                        FontWeight.w800,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ],
@@ -1778,8 +1716,7 @@ class _InfoCard extends StatelessWidget {
 // ФОРМА ДОБАВЛЕНИЯ
 // =============================================================
 
-class _AddToiletSheet
-    extends StatelessWidget {
+class _AddToiletSheet extends StatelessWidget {
   final bool isFree;
   final int cleanliness;
   final String condition;
@@ -1810,26 +1747,15 @@ class _AddToiletSheet
   Widget build(BuildContext context) {
     return SafeArea(
       child: Container(
-        constraints:
-            const BoxConstraints(
-          maxHeight: 700,
-        ),
+        constraints: const BoxConstraints(maxHeight: 700),
         decoration: const BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(30),
-          ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
         ),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-            20,
-            12,
-            20,
-            20,
-          ),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Center(
                 child: Container(
@@ -1837,8 +1763,7 @@ class _AddToiletSheet
                   height: 5,
                   decoration: BoxDecoration(
                     color: Colors.grey.shade300,
-                    borderRadius:
-                        BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                 ),
               ),
@@ -1851,11 +1776,8 @@ class _AddToiletSheet
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      color: const Color(
-                        0xFFDCFCE7,
-                      ),
-                      borderRadius:
-                          BorderRadius.circular(16),
+                      color: const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                     child: const Icon(
                       Icons.add_location_alt_rounded,
@@ -1866,23 +1788,19 @@ class _AddToiletSheet
                   const SizedBox(width: 13),
                   const Expanded(
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           'Добавить туалет',
                           style: TextStyle(
                             fontSize: 23,
-                            fontWeight:
-                                FontWeight.w900,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
                         SizedBox(height: 3),
                         Text(
                           'Помоги другим найти его',
-                          style: TextStyle(
-                            color: Colors.grey,
-                          ),
+                          style: TextStyle(color: Colors.grey),
                         ),
                       ],
                     ),
@@ -1902,37 +1820,28 @@ class _AddToiletSheet
 
               Container(
                 decoration: BoxDecoration(
-                  color:
-                      const Color(0xFFF7F8FA),
-                  borderRadius:
-                      BorderRadius.circular(16),
+                  color: const Color(0xFFF7F8FA),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                padding:
-                    const EdgeInsets.all(5),
+                padding: const EdgeInsets.all(5),
                 child: Row(
                   children: [
                     Expanded(
                       child: _ChoiceButton(
                         selected: isFree,
-                        icon: Icons
-                            .check_circle_outline_rounded,
+                        icon: Icons.check_circle_outline_rounded,
                         text: 'Бесплатный',
-                        color:
-                            const Color(0xFF16A34A),
-                        onTap: () =>
-                            onFreeChanged(true),
+                        color: const Color(0xFF16A34A),
+                        onTap: () => onFreeChanged(true),
                       ),
                     ),
                     Expanded(
                       child: _ChoiceButton(
                         selected: !isFree,
-                        icon: Icons
-                            .payments_outlined,
+                        icon: Icons.payments_outlined,
                         text: 'Платный',
-                        color:
-                            Colors.orange.shade700,
-                        onTap: () =>
-                            onFreeChanged(false),
+                        color: Colors.orange.shade700,
+                        onTap: () => onFreeChanged(false),
                       ),
                     ),
                   ],
@@ -1950,73 +1859,50 @@ class _AddToiletSheet
               const SizedBox(height: 8),
 
               Row(
-                children: List.generate(
-                  5,
-                  (index) {
-                    final star = index + 1;
+                children: List.generate(5, (index) {
+                  final star = index + 1;
 
-                    return GestureDetector(
-                      onTap: () =>
-                          onCleanlinessChanged(
-                        star,
+                  return GestureDetector(
+                    onTap: () => onCleanlinessChanged(star),
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 7),
+                      child: Icon(
+                        star <= cleanliness
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        color: Colors.amber.shade600,
+                        size: 37,
                       ),
-                      child: Padding(
-                        padding:
-                            const EdgeInsets.only(
-                          right: 7,
-                        ),
-                        child: Icon(
-                          star <= cleanliness
-                              ? Icons
-                                  .star_rounded
-                              : Icons
-                                  .star_border_rounded,
-                          color:
-                              Colors.amber.shade600,
-                          size: 37,
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                    ),
+                  );
+                }),
               ),
 
               const SizedBox(height: 22),
 
               // Состояние
               const _SectionTitle(
-                icon: Icons
-                    .health_and_safety_outlined,
+                icon: Icons.health_and_safety_outlined,
                 title: 'Состояние',
               ),
 
               const SizedBox(height: 10),
 
               DropdownButtonFormField<String>(
-                value: condition,
-                decoration:
-                    const InputDecoration(
-                  prefixIcon: Icon(
-                    Icons
-                        .cleaning_services_outlined,
-                  ),
+                initialValue: condition,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.cleaning_services_outlined),
                 ),
                 items: const [
                   DropdownMenuItem(
                     value: 'Хорошее',
-                    child:
-                        Text('🟢  Хорошее'),
+                    child: Text('🟢  Хорошее'),
                   ),
                   DropdownMenuItem(
                     value: 'Среднее',
-                    child:
-                        Text('🟡  Среднее'),
+                    child: Text('🟡  Среднее'),
                   ),
-                  DropdownMenuItem(
-                    value: 'Плохое',
-                    child:
-                        Text('🔴  Плохое'),
-                  ),
+                  DropdownMenuItem(value: 'Плохое', child: Text('🔴  Плохое')),
                 ],
                 onChanged: (value) {
                   if (value != null) {
@@ -2029,8 +1915,7 @@ class _AddToiletSheet
 
               // Комментарий
               const _SectionTitle(
-                icon: Icons
-                    .chat_bubble_outline_rounded,
+                icon: Icons.chat_bubble_outline_rounded,
                 title: 'Комментарий',
               ),
 
@@ -2040,20 +1925,12 @@ class _AddToiletSheet
                 maxLines: 3,
                 maxLength: 300,
                 onChanged: onCommentChanged,
-                decoration:
-                    const InputDecoration(
-                  hintText:
-                      'Например: находится внутри ТЦ',
+                decoration: const InputDecoration(
+                  hintText: 'Например: находится внутри ТЦ',
                   alignLabelWithHint: true,
                   prefixIcon: Padding(
-                    padding:
-                        EdgeInsets.only(
-                      bottom: 55,
-                    ),
-                    child: Icon(
-                      Icons
-                          .edit_note_rounded,
-                    ),
+                    padding: EdgeInsets.only(bottom: 55),
+                    child: Icon(Icons.edit_note_rounded),
                   ),
                 ),
               ),
@@ -2065,24 +1942,13 @@ class _AddToiletSheet
                   Expanded(
                     child: OutlinedButton(
                       onPressed: onCancel,
-                      style:
-                          OutlinedButton.styleFrom(
-                        minimumSize:
-                            const Size(
-                          0,
-                          52,
-                        ),
-                        shape:
-                            RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius
-                                  .circular(
-                            16,
-                          ),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 52),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      child:
-                          const Text('Отмена'),
+                      child: const Text('Отмена'),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -2090,12 +1956,8 @@ class _AddToiletSheet
                     flex: 2,
                     child: FilledButton.icon(
                       onPressed: onAdd,
-                      icon: const Icon(
-                        Icons
-                            .add_location_alt_rounded,
-                      ),
-                      label:
-                          const Text('Добавить'),
+                      icon: const Icon(Icons.add_location_alt_rounded),
+                      label: const Text('Добавить'),
                     ),
                   ),
                 ],
@@ -2112,32 +1974,21 @@ class _AddToiletSheet
 // ЗАГОЛОВОК СЕКЦИИ
 // =============================================================
 
-class _SectionTitle
-    extends StatelessWidget {
+class _SectionTitle extends StatelessWidget {
   final IconData icon;
   final String title;
 
-  const _SectionTitle({
-    required this.icon,
-    required this.title,
-  });
+  const _SectionTitle({required this.icon, required this.title});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(
-          icon,
-          size: 20,
-          color: const Color(0xFF15803D),
-        ),
+        Icon(icon, size: 20, color: const Color(0xFF15803D)),
         const SizedBox(width: 8),
         Text(
           title,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-          ),
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
         ),
       ],
     );
@@ -2148,8 +1999,7 @@ class _SectionTitle
 // КНОПКА ВЫБОРА
 // =============================================================
 
-class _ChoiceButton
-    extends StatelessWidget {
+class _ChoiceButton extends StatelessWidget {
   final bool selected;
   final IconData icon;
   final String text;
@@ -2169,54 +2019,38 @@ class _ChoiceButton
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration:
-            const Duration(milliseconds: 180),
-        padding:
-            const EdgeInsets.symmetric(
-          vertical: 13,
-          horizontal: 8,
-        ),
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 8),
         decoration: BoxDecoration(
-          color: selected
-              ? Colors.white
-              : Colors.transparent,
-          borderRadius:
-              BorderRadius.circular(13),
+          color: selected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(13),
           boxShadow: selected
               ? [
                   BoxShadow(
-                    color: Colors.black
-                        .withOpacity(0.07),
+                    color: Colors.black.withValues(alpha: 0.07),
                     blurRadius: 8,
-                    offset:
-                        const Offset(0, 2),
+                    offset: const Offset(0, 2),
                   ),
                 ]
               : null,
         ),
         child: Row(
-          mainAxisAlignment:
-              MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               icon,
               size: 19,
-              color: selected
-                  ? color
-                  : Colors.grey.shade500,
+              color: selected ? color : Colors.grey.shade500,
             ),
             const SizedBox(width: 6),
             Flexible(
               child: Text(
                 text,
-                overflow:
-                    TextOverflow.ellipsis,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w800,
-                  color: selected
-                      ? Colors.black87
-                      : Colors.grey.shade600,
+                  color: selected ? Colors.black87 : Colors.grey.shade600,
                 ),
               ),
             ),
