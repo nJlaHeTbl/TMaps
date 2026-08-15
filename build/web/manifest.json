@@ -1,9 +1,9 @@
 {
-    "id": "/",
+    "id": "./",
     "name": "TMaps — туалеты и зарядка рядом",
     "short_name": "TMaps",
-    "start_url": "/",
-    "scope": "/",
+    "start_url": "./",
+    "scope": "./",
     "display": "standalone",
     "background_color": "#F7F8FA",
     "theme_color": "#15803D",

@@ -24,6 +24,47 @@ bool? _nullableBool(dynamic value) {
   };
 }
 
+String _categoryLabel(PlaceKind kind) {
+  return switch (kind) {
+    PlaceKind.publicToilet => 'Туалет',
+    PlaceKind.communityToilet => 'Сообщество',
+    PlaceKind.cafe => 'Кафе',
+    PlaceKind.fuel => 'АЗС',
+    PlaceKind.organization => 'Заведения',
+    PlaceKind.phoneCharging => 'Телефон',
+    PlaceKind.evCharging => 'Электро',
+  };
+}
+
+IconData _categoryIcon(PlaceKind kind) {
+  return switch (kind) {
+    PlaceKind.publicToilet => Icons.wc_rounded,
+    PlaceKind.communityToilet => Icons.groups_rounded,
+    PlaceKind.cafe => Icons.restaurant_rounded,
+    PlaceKind.fuel => Icons.local_gas_station_rounded,
+    PlaceKind.organization => Icons.apartment_rounded,
+    PlaceKind.phoneCharging => Icons.battery_charging_full_rounded,
+    PlaceKind.evCharging => Icons.ev_station_rounded,
+  };
+}
+
+Color _categoryColor(PlaceKind kind) {
+  return switch (kind) {
+    PlaceKind.publicToilet => const Color(0xFF16A34A),
+    PlaceKind.communityToilet => const Color(0xFFDB2777),
+    PlaceKind.cafe => const Color(0xFFEA580C),
+    PlaceKind.fuel => const Color(0xFF7C3AED),
+    PlaceKind.organization => const Color(0xFF0F766E),
+    PlaceKind.phoneCharging => const Color(0xFF2563EB),
+    PlaceKind.evCharging => const Color(0xFF0891B2),
+  };
+}
+
+Color _toiletFeeColor({required bool feeKnown, required bool isFree}) {
+  if (!feeKnown) return Colors.blueGrey.shade600;
+  return isFree ? const Color(0xFF16A34A) : const Color(0xFF0284C7);
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -81,6 +122,7 @@ class _HomePageState extends State<HomePage> {
   bool showVenueToilets = true;
   bool showPhoneCharging = true;
   bool showEvCharging = true;
+  PlaceKind? selectedCategory;
 
   List<LatLng> routePoints = [];
 
@@ -90,7 +132,12 @@ class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> get visibleToilets {
     return toilets
         .where((toilet) {
+          final placeKind = PlaceInfo.kindOf(toilet);
           final hasToilet = PlaceInfo.hasToilet(toilet);
+
+          if (selectedCategory != null && placeKind != selectedCategory) {
+            return false;
+          }
 
           if (showFreeOnly &&
               (!hasToilet ||
@@ -113,12 +160,10 @@ class _HomePageState extends State<HomePage> {
           }
 
           if (!showVenueToilets && PlaceInfo.isVenue(toilet)) return false;
-          if (!showPhoneCharging &&
-              PlaceInfo.kindOf(toilet) == PlaceKind.phoneCharging) {
+          if (!showPhoneCharging && placeKind == PlaceKind.phoneCharging) {
             return false;
           }
-          if (!showEvCharging &&
-              PlaceInfo.kindOf(toilet) == PlaceKind.evCharging) {
+          if (!showEvCharging && placeKind == PlaceKind.evCharging) {
             return false;
           }
 
@@ -128,6 +173,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   bool get filtersActive =>
+      selectedCategory != null ||
       showFreeOnly ||
       showWheelchairOnly ||
       showCommunityOnly ||
@@ -392,6 +438,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> showFilters() async {
+    var category = selectedCategory;
     var freeOnly = showFreeOnly;
     var wheelchairOnly = showWheelchairOnly;
     var communityOnly = showCommunityOnly;
@@ -421,6 +468,40 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                     const SizedBox(height: 10),
+                    const Text(
+                      'Что показать',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _FilterCategoryChip(
+                          label: 'Все места',
+                          icon: Icons.layers_rounded,
+                          color: green,
+                          selected: category == null,
+                          onSelected: () {
+                            setSheetState(() => category = null);
+                          },
+                        ),
+                        ...PlaceKind.values.map(
+                          (kind) => _FilterCategoryChip(
+                            label: _categoryLabel(kind),
+                            icon: _categoryIcon(kind),
+                            color: _categoryColor(kind),
+                            selected: category == kind,
+                            onSelected: () {
+                              setSheetState(() => category = kind);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    const Divider(height: 1),
+                    const SizedBox(height: 6),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Только бесплатные'),
@@ -486,6 +567,7 @@ class _HomePageState extends State<HomePage> {
                           child: OutlinedButton(
                             onPressed: () {
                               setSheetState(() {
+                                category = null;
                                 freeOnly = false;
                                 wheelchairOnly = false;
                                 communityOnly = false;
@@ -503,6 +585,7 @@ class _HomePageState extends State<HomePage> {
                           child: FilledButton(
                             onPressed: () {
                               setState(() {
+                                selectedCategory = category;
                                 showFreeOnly = freeOnly;
                                 showWheelchairOnly = wheelchairOnly;
                                 showCommunityOnly = communityOnly;
@@ -1240,7 +1323,12 @@ class _HomePageState extends State<HomePage> {
             child: SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(14, 88, 14, 0),
-                child: _MapLegendBar(),
+                child: _MapLegendBar(
+                  selectedKind: selectedCategory,
+                  onSelected: (kind) {
+                    setState(() => selectedCategory = kind);
+                  },
+                ),
               ),
             ),
           ),
@@ -1486,7 +1574,10 @@ class _GlassHeader extends StatelessWidget {
 }
 
 class _MapLegendBar extends StatelessWidget {
-  const _MapLegendBar();
+  final PlaceKind? selectedKind;
+  final ValueChanged<PlaceKind?> onSelected;
+
+  const _MapLegendBar({required this.selectedKind, required this.onSelected});
 
   @override
   Widget build(BuildContext context) {
@@ -1503,42 +1594,23 @@ class _MapLegendBar extends StatelessWidget {
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 5),
-            child: const Row(
+            child: Row(
               children: [
                 _LegendItem(
                   color: Color(0xFF16A34A),
-                  icon: Icons.wc_rounded,
-                  label: 'Туалет',
+                  icon: Icons.layers_rounded,
+                  label: 'Все',
+                  selected: selectedKind == null,
+                  onTap: () => onSelected(null),
                 ),
-                _LegendItem(
-                  color: Color(0xFFDB2777),
-                  icon: Icons.add_location_alt_rounded,
-                  label: 'Сообщество',
-                ),
-                _LegendItem(
-                  color: Color(0xFFEA580C),
-                  icon: Icons.restaurant_rounded,
-                  label: 'Кафе',
-                ),
-                _LegendItem(
-                  color: Color(0xFF7C3AED),
-                  icon: Icons.local_gas_station_rounded,
-                  label: 'АЗС',
-                ),
-                _LegendItem(
-                  color: Color(0xFF0F766E),
-                  icon: Icons.apartment_rounded,
-                  label: 'Заведения',
-                ),
-                _LegendItem(
-                  color: Color(0xFF2563EB),
-                  icon: Icons.battery_charging_full_rounded,
-                  label: 'Телефон',
-                ),
-                _LegendItem(
-                  color: Color(0xFF0891B2),
-                  icon: Icons.ev_station_rounded,
-                  label: 'Электро',
+                ...PlaceKind.values.map(
+                  (kind) => _LegendItem(
+                    color: _categoryColor(kind),
+                    icon: _categoryIcon(kind),
+                    label: _categoryLabel(kind),
+                    selected: selectedKind == kind,
+                    onTap: () => onSelected(kind),
+                  ),
                 ),
               ],
             ),
@@ -1553,36 +1625,103 @@ class _LegendItem extends StatelessWidget {
   final Color color;
   final IconData icon;
   final String label;
+  final bool selected;
+  final VoidCallback onTap;
 
   const _LegendItem({
     required this.color,
     required this.icon,
     required this.label,
+    required this.selected,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 8),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 27,
-            height: 27,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(9),
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: 'Показать: $label',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(13),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+          decoration: BoxDecoration(
+            color: selected
+                ? color.withValues(alpha: 0.12)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(
+              color: selected
+                  ? color.withValues(alpha: 0.3)
+                  : Colors.transparent,
             ),
-            child: Icon(icon, color: color, size: 17),
           ),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 27,
+                height: 27,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: selected ? 0.2 : 0.12),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(icon, color: color, size: 17),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  color: selected ? color : const Color(0xFF1F2937),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
+    );
+  }
+}
+
+class _FilterCategoryChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  const _FilterCategoryChip({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ChoiceChip(
+      selected: selected,
+      onSelected: (_) => onSelected(),
+      avatar: Icon(icon, size: 18, color: selected ? color : Colors.blueGrey),
+      label: Text(label),
+      labelStyle: TextStyle(
+        fontWeight: FontWeight.w800,
+        color: selected ? color : const Color(0xFF374151),
+      ),
+      selectedColor: color.withValues(alpha: 0.13),
+      side: BorderSide(
+        color: selected
+            ? color.withValues(alpha: 0.35)
+            : const Color(0xFFE5E7EB),
+      ),
+      showCheckmark: false,
     );
   }
 }
@@ -1605,9 +1744,9 @@ class _PlaceMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (color, icon) = switch (placeKind) {
-      PlaceKind.communityToilet => (
-        const Color(0xFFDB2777),
-        Icons.add_location_alt_rounded,
+      PlaceKind.communityToilet || PlaceKind.publicToilet => (
+        _toiletFeeColor(feeKnown: feeKnown, isFree: isFree),
+        Icons.wc_rounded,
       ),
       PlaceKind.phoneCharging => (
         const Color(0xFF2563EB),
@@ -1626,34 +1765,50 @@ class _PlaceMarker extends StatelessWidget {
         const Color(0xFF0F766E),
         Icons.apartment_rounded,
       ),
-      _ => (
-        !feeKnown
-            ? Colors.blueGrey.shade600
-            : isFree
-            ? const Color(0xFF16A34A)
-            : Colors.orange.shade700,
-        Icons.wc_rounded,
-      ),
     };
 
     return Column(
       children: [
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 3),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.22),
-                blurRadius: 7,
-                offset: const Offset(0, 3),
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 3),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.22),
+                    blurRadius: 7,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: Icon(icon, color: Colors.white, size: 26),
+              child: Icon(icon, color: Colors.white, size: 26),
+            ),
+            if (placeKind == PlaceKind.communityToilet)
+              Positioned(
+                top: -3,
+                right: -3,
+                child: Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDB2777),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: const Icon(
+                    Icons.groups_rounded,
+                    color: Colors.white,
+                    size: 12,
+                  ),
+                ),
+              ),
+          ],
         ),
         Transform.translate(
           offset: const Offset(0, -5),
@@ -1955,25 +2110,26 @@ class _ToiletInfoSheet extends StatelessWidget {
 
   IconData get placeIcon {
     return switch (placeKind) {
-      PlaceKind.communityToilet => Icons.add_location_alt_rounded,
+      PlaceKind.communityToilet || PlaceKind.publicToilet => Icons.wc_rounded,
       PlaceKind.phoneCharging => Icons.battery_charging_full_rounded,
       PlaceKind.evCharging => Icons.ev_station_rounded,
       PlaceKind.cafe => Icons.restaurant_rounded,
       PlaceKind.fuel => Icons.local_gas_station_rounded,
       PlaceKind.organization => Icons.apartment_rounded,
-      _ => Icons.wc_rounded,
     };
   }
 
   Color get placeColor {
     return switch (placeKind) {
-      PlaceKind.communityToilet => const Color(0xFFDB2777),
+      PlaceKind.communityToilet || PlaceKind.publicToilet => _toiletFeeColor(
+        feeKnown: feeKnown,
+        isFree: isFree,
+      ),
       PlaceKind.phoneCharging => const Color(0xFF2563EB),
       PlaceKind.evCharging => const Color(0xFF0891B2),
       PlaceKind.cafe => const Color(0xFFEA580C),
       PlaceKind.fuel => const Color(0xFF7C3AED),
       PlaceKind.organization => const Color(0xFF0F766E),
-      _ => const Color(0xFF15803D),
     };
   }
 

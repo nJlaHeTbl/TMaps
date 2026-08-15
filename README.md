@@ -1,17 +1,21 @@
-# tmaps
+# TMaps
 
-A new Flutter project.
+TMaps — открытая карта туалетов, доступных заведений и зарядных мест Казахстана.
 
-## Getting Started
+## Возможности
 
-This project is a starting point for a Flutter application.
+- общественные и пользовательские туалеты;
+- туалеты в кафе, ресторанах, организациях и на АЗС;
+- зарядки телефонов и электромобилей;
+- геолокация, ближайшая точка, расстояние и маршрут;
+- фильтры доступности и стоимости;
+- отзывы о бумаге, мыле, состоянии и доступе;
+- голоса «актуально» и «есть проблема»;
+- установка как PWA на Android и iPhone.
 
-A few resources to get you started if this is your first Flutter project:
+## Сайты
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+- GitHub Pages: <https://njlahetbl.github.io/TMaps/>
+- резервный Netlify: <https://tmaps-kz.netlify.app/>
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Данные OpenStreetMap используются на условиях ODbL 1.0.
