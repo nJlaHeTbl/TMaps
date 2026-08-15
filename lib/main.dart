@@ -1,4 +1,5 @@
 import 'dart:ui' as ui;
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -73,6 +74,7 @@ class _HomePageState extends State<HomePage> {
   bool isBuildingRoute = false;
   bool isFindingNearest = false;
   bool isSubmittingReport = false;
+  bool isSubmittingVote = false;
   bool showFreeOnly = false;
   bool showWheelchairOnly = false;
   bool showCommunityOnly = false;
@@ -806,8 +808,15 @@ class _HomePageState extends State<HomePage> {
           wheelchairAccessible: wheelchairAccessible,
           phoneCharging: phoneCharging,
           reportCount: PlaceInfo.reportCount(toilet),
+          likes: (toilet['likes'] as num?)?.toInt() ?? 0,
+          dislikes: (toilet['dislikes'] as num?)?.toInt() ?? 0,
           isBuildingRoute: isBuildingRoute,
           isSubmittingReport: isSubmittingReport,
+          isSubmittingVote: isSubmittingVote,
+          onVote: (isCurrent) async {
+            Navigator.of(context).pop();
+            await submitVote(toilet, isCurrent: isCurrent);
+          },
           onReport: () async {
             Navigator.of(context).pop();
             await showReportForm(toilet);
@@ -925,6 +934,56 @@ class _HomePageState extends State<HomePage> {
       );
     } finally {
       if (mounted) setState(() => isSubmittingReport = false);
+    }
+  }
+
+  Future<void> submitVote(
+    Map<String, dynamic> place, {
+    required bool isCurrent,
+  }) async {
+    if (isSubmittingVote) return;
+
+    try {
+      setState(() => isSubmittingVote = true);
+      final prefs = await SharedPreferences.getInstance();
+      var voterKey = prefs.getString('voter_key');
+
+      if (voterKey == null || voterKey.length < 12) {
+        final randomPart = Random.secure()
+            .nextInt(0x7fffffff)
+            .toRadixString(16);
+        voterKey =
+            'device-${DateTime.now().microsecondsSinceEpoch}-$randomPart';
+        await prefs.setString('voter_key', voterKey);
+      }
+
+      await _toiletRepository.castVote(
+        place: place,
+        voterKey: voterKey,
+        isCurrent: isCurrent,
+      );
+      await loadToilets();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isCurrent
+                ? 'Спасибо! Ты подтвердил, что место актуально'
+                : 'Спасибо! Отметили, что место нужно проверить',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade700,
+          content: Text('Не удалось сохранить оценку: $error'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => isSubmittingVote = false);
     }
   }
 
@@ -1855,8 +1914,12 @@ class _ToiletInfoSheet extends StatelessWidget {
   final bool? wheelchairAccessible;
   final bool? phoneCharging;
   final int reportCount;
+  final int likes;
+  final int dislikes;
   final bool isBuildingRoute;
   final bool isSubmittingReport;
+  final bool isSubmittingVote;
+  final ValueChanged<bool> onVote;
   final VoidCallback onReport;
   final VoidCallback onRoute;
   final VoidCallback onClose;
@@ -1879,8 +1942,12 @@ class _ToiletInfoSheet extends StatelessWidget {
     required this.wheelchairAccessible,
     required this.phoneCharging,
     required this.reportCount,
+    required this.likes,
+    required this.dislikes,
     required this.isBuildingRoute,
     required this.isSubmittingReport,
+    required this.isSubmittingVote,
+    required this.onVote,
     required this.onReport,
     required this.onRoute,
     required this.onClose,
@@ -2171,6 +2238,43 @@ class _ToiletInfoSheet extends StatelessWidget {
                 ],
 
                 const SizedBox(height: 20),
+
+                const Text(
+                  'Точка актуальна?',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: isSubmittingVote ? null : () => onVote(true),
+                        icon: const Icon(Icons.thumb_up_alt_rounded),
+                        label: Text('Да · $likes'),
+                        style: FilledButton.styleFrom(
+                          foregroundColor: const Color(0xFF15803D),
+                          backgroundColor: const Color(0xFFDCFCE7),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: isSubmittingVote
+                            ? null
+                            : () => onVote(false),
+                        icon: const Icon(Icons.report_problem_rounded),
+                        label: Text('Проблема · $dislikes'),
+                        style: FilledButton.styleFrom(
+                          foregroundColor: const Color(0xFFB45309),
+                          backgroundColor: const Color(0xFFFFF7ED),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
 
                 SizedBox(
                   width: double.infinity,

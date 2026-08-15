@@ -15,6 +15,7 @@ class ToiletRepository {
     final openStreetMapToilets = await _fetchOpenStreetMapToilets();
     List<Map<String, dynamic>> communityToilets = const [];
     List<Map<String, dynamic>> reports = const [];
+    List<Map<String, dynamic>> voteTotals = const [];
 
     try {
       communityToilets = await _fetchCommunityToilets();
@@ -28,10 +29,17 @@ class ToiletRepository {
       reports = const [];
     }
 
-    return _attachReports([
-      ...communityToilets,
-      ...openStreetMapToilets,
-    ], reports);
+    try {
+      voteTotals = await _fetchVoteTotals();
+    } on Object {
+      voteTotals = const [];
+    }
+
+    return _attachCommunityData(
+      [...communityToilets, ...openStreetMapToilets],
+      reports,
+      voteTotals,
+    );
   }
 
   Future<List<Map<String, dynamic>>> _fetchCommunityToilets() async {
@@ -74,9 +82,17 @@ class ToiletRepository {
         .toList();
   }
 
-  List<Map<String, dynamic>> _attachReports(
+  Future<List<Map<String, dynamic>>> _fetchVoteTotals() async {
+    final response = await _client.rpc('get_place_vote_totals');
+    return (response as List<dynamic>)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList(growable: false);
+  }
+
+  List<Map<String, dynamic>> _attachCommunityData(
     List<Map<String, dynamic>> places,
     List<Map<String, dynamic>> reports,
+    List<Map<String, dynamic>> voteTotals,
   ) {
     final reportsByPlace = <String, List<Map<String, dynamic>>>{};
 
@@ -86,14 +102,22 @@ class ToiletRepository {
       reportsByPlace.putIfAbsent(key, () => []).add(report);
     }
 
+    final votesByPlace = {
+      for (final totals in voteTotals)
+        if (totals['place_key'] != null) totals['place_key'].toString(): totals,
+    };
+
     return places
         .map((place) {
           final key = PlaceInfo.keyOf(place);
           final placeReports = reportsByPlace[key] ?? const [];
+          final votes = votesByPlace[key];
           return {
             ...place,
             'place_key': key,
             'report_count': placeReports.length,
+            'likes': (votes?['likes'] as num?)?.toInt() ?? 0,
+            'dislikes': (votes?['dislikes'] as num?)?.toInt() ?? 0,
             if (placeReports.isNotEmpty) 'latest_report': placeReports.first,
           };
         })
@@ -181,5 +205,20 @@ class ToiletRepository {
         .single();
 
     return Map<String, dynamic>.from(response);
+  }
+
+  Future<void> castVote({
+    required Map<String, dynamic> place,
+    required String voterKey,
+    required bool isCurrent,
+  }) async {
+    await _client.rpc(
+      'cast_place_vote',
+      params: {
+        'p_place_key': PlaceInfo.keyOf(place),
+        'p_voter_key': voterKey,
+        'p_is_current': isCurrent,
+      },
+    );
   }
 }
