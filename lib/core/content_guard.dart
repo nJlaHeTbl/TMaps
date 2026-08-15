@@ -62,6 +62,11 @@ class ContentGuard {
         validateComment(toilet['comment']?.toString()) == null;
   }
 
+  static bool isSafeReport(Map<String, dynamic> report) {
+    return validateUsername(report['username']?.toString()) == null &&
+        validateComment(report['comment']?.toString()) == null;
+  }
+
   static bool _hasBlockedContent(String value) {
     final normalized = value.toLowerCase().replaceAll('ё', 'е');
     return _blockedFragments.any(normalized.contains);

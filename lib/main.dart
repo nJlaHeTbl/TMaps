@@ -10,8 +10,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/app_config.dart';
 import 'core/app_theme.dart';
 import 'core/content_guard.dart';
+import 'core/place_info.dart';
 import 'data/toilet_repository.dart';
 import 'services/route_service.dart';
+
+bool? _nullableBool(dynamic value) {
+  if (value is bool) return value;
+  return switch (value?.toString().toLowerCase()) {
+    'yes' || 'true' || '1' => true,
+    'no' || 'false' || '0' => false,
+    _ => null,
+  };
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -62,9 +72,13 @@ class _HomePageState extends State<HomePage> {
   bool isAddingToilet = false;
   bool isBuildingRoute = false;
   bool isFindingNearest = false;
+  bool isSubmittingReport = false;
   bool showFreeOnly = false;
   bool showWheelchairOnly = false;
   bool showCommunityOnly = false;
+  bool showVenueToilets = true;
+  bool showPhoneCharging = true;
+  bool showEvCharging = true;
 
   List<LatLng> routePoints = [];
 
@@ -74,16 +88,35 @@ class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> get visibleToilets {
     return toilets
         .where((toilet) {
+          final hasToilet = PlaceInfo.hasToilet(toilet);
+
           if (showFreeOnly &&
-              (toilet['fee_known'] == false || toilet['is_free'] != true)) {
+              (!hasToilet ||
+                  toilet['fee_known'] == false ||
+                  toilet['is_free'] != true)) {
             return false;
           }
 
-          if (showWheelchairOnly && toilet['wheelchair'] != 'yes') {
+          final wheelchair = PlaceInfo.effectiveValue(
+            toilet,
+            'wheelchair_accessible',
+          );
+          if (showWheelchairOnly &&
+              (wheelchair != true && toilet['wheelchair'] != 'yes')) {
             return false;
           }
 
           if (showCommunityOnly && toilet['source'] == 'openstreetmap') {
+            return false;
+          }
+
+          if (!showVenueToilets && PlaceInfo.isVenue(toilet)) return false;
+          if (!showPhoneCharging &&
+              PlaceInfo.kindOf(toilet) == PlaceKind.phoneCharging) {
+            return false;
+          }
+          if (!showEvCharging &&
+              PlaceInfo.kindOf(toilet) == PlaceKind.evCharging) {
             return false;
           }
 
@@ -93,7 +126,12 @@ class _HomePageState extends State<HomePage> {
   }
 
   bool get filtersActive =>
-      showFreeOnly || showWheelchairOnly || showCommunityOnly;
+      showFreeOnly ||
+      showWheelchairOnly ||
+      showCommunityOnly ||
+      !showVenueToilets ||
+      !showPhoneCharging ||
+      !showEvCharging;
 
   @override
   void initState() {
@@ -155,7 +193,11 @@ class _HomePageState extends State<HomePage> {
                     color: green.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.wc_rounded, color: green, size: 36),
+                  child: const Icon(
+                    Icons.travel_explore_rounded,
+                    color: green,
+                    size: 36,
+                  ),
                 ),
                 const SizedBox(height: 18),
                 const Text(
@@ -288,7 +330,11 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      if (visibleToilets.isEmpty) {
+      final availableToilets = visibleToilets
+          .where(PlaceInfo.hasToilet)
+          .toList(growable: false);
+
+      if (availableToilets.isEmpty) {
         throw Exception('На карте пока нет туалетов');
       }
 
@@ -300,7 +346,7 @@ class _HomePageState extends State<HomePage> {
       Map<String, dynamic>? nearest;
       double nearestDistance = double.infinity;
 
-      for (final toilet in visibleToilets) {
+      for (final toilet in availableToilets) {
         final distance = _distanceTo(toilet);
         if (distance < nearestDistance) {
           nearest = toilet;
@@ -347,15 +393,19 @@ class _HomePageState extends State<HomePage> {
     var freeOnly = showFreeOnly;
     var wheelchairOnly = showWheelchairOnly;
     var communityOnly = showCommunityOnly;
+    var venueToilets = showVenueToilets;
+    var phoneCharging = showPhoneCharging;
+    var evCharging = showEvCharging;
 
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
             return SafeArea(
-              child: Padding(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -398,6 +448,35 @@ class _HomePageState extends State<HomePage> {
                         setSheetState(() => communityOnly = value);
                       },
                     ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Туалеты в кафе, АЗС и организациях'),
+                      subtitle: const Text(
+                        'Места с доступом для клиентов или посетителей',
+                      ),
+                      value: venueToilets,
+                      onChanged: (value) {
+                        setSheetState(() => venueToilets = value);
+                      },
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Зарядка телефона'),
+                      subtitle: const Text('Точки зарядки мобильных устройств'),
+                      value: phoneCharging,
+                      onChanged: (value) {
+                        setSheetState(() => phoneCharging = value);
+                      },
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Электрозарядные станции'),
+                      subtitle: const Text('Зарядка для электромобилей'),
+                      value: evCharging,
+                      onChanged: (value) {
+                        setSheetState(() => evCharging = value);
+                      },
+                    ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
@@ -408,6 +487,9 @@ class _HomePageState extends State<HomePage> {
                                 freeOnly = false;
                                 wheelchairOnly = false;
                                 communityOnly = false;
+                                venueToilets = true;
+                                phoneCharging = true;
+                                evCharging = true;
                               });
                             },
                             child: const Text('Сбросить'),
@@ -422,6 +504,9 @@ class _HomePageState extends State<HomePage> {
                                 showFreeOnly = freeOnly;
                                 showWheelchairOnly = wheelchairOnly;
                                 showCommunityOnly = communityOnly;
+                                showVenueToilets = venueToilets;
+                                showPhoneCharging = phoneCharging;
+                                showEvCharging = evCharging;
                               });
                               Navigator.of(context).pop();
                             },
@@ -435,6 +520,47 @@ class _HomePageState extends State<HomePage> {
               ),
             );
           },
+        );
+      },
+    );
+  }
+
+  Future<void> showInstallInstructions() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return const SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20, 4, 20, 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Установить TMaps',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'После установки карта будет открываться с главного экрана как обычное приложение.',
+                ),
+                SizedBox(height: 18),
+                _InstallStep(
+                  icon: Icons.android_rounded,
+                  title: 'Android — Chrome',
+                  text:
+                      'Нажми ⋮ → «Установить приложение» или «Добавить на главный экран».',
+                ),
+                SizedBox(height: 12),
+                _InstallStep(
+                  icon: Icons.phone_iphone_rounded,
+                  title: 'iPhone — Safari',
+                  text: 'Нажми «Поделиться» → «На экран Домой» → «Добавить».',
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
@@ -495,6 +621,7 @@ class _HomePageState extends State<HomePage> {
       int cleanliness = 5;
       String condition = 'Хорошее';
       String comment = '';
+      PlaceKind placeKind = PlaceKind.communityToilet;
 
       final result = await showModalBottomSheet<bool>(
         context: context,
@@ -504,10 +631,16 @@ class _HomePageState extends State<HomePage> {
           return StatefulBuilder(
             builder: (context, setDialogState) {
               return _AddToiletSheet(
+                placeKind: placeKind,
                 isFree: isFree,
                 cleanliness: cleanliness,
                 condition: condition,
                 comment: comment,
+                onPlaceKindChanged: (value) {
+                  setDialogState(() {
+                    placeKind = value;
+                  });
+                },
                 onFreeChanged: (value) {
                   setDialogState(() {
                     isFree = value;
@@ -562,6 +695,7 @@ class _HomePageState extends State<HomePage> {
         latitude: currentPosition.latitude,
         longitude: currentPosition.longitude,
         username: username!,
+        placeKind: placeKind,
         isFree: isFree,
         cleanliness: cleanliness,
         condition: condition,
@@ -583,7 +717,7 @@ class _HomePageState extends State<HomePage> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          content: Text('🚻 Туалет добавлен от имени $username'),
+          content: Text('Место добавлено от имени $username'),
         ),
       );
     } catch (e) {
@@ -614,18 +748,39 @@ class _HomePageState extends State<HomePage> {
   // =========================================================
 
   void showToiletInfo(Map<String, dynamic> toilet) {
+    final latestReport = PlaceInfo.latestReport(toilet);
     final String author =
-        toilet['username']?.toString() ?? 'Неизвестный пользователь';
+        latestReport?['username']?.toString() ??
+        toilet['username']?.toString() ??
+        'Неизвестный пользователь';
 
     final bool isFree = toilet['is_free'] == true;
     final bool feeKnown = toilet['fee_known'] != false;
 
-    final int cleanliness = (toilet['cleanliness'] as num?)?.toInt() ?? 5;
+    final int cleanliness =
+        (PlaceInfo.effectiveValue(toilet, 'cleanliness') as num?)?.toInt() ?? 0;
 
-    final String condition = toilet['condition']?.toString() ?? 'Хорошее';
+    final String condition =
+        PlaceInfo.effectiveValue(toilet, 'condition')?.toString() ??
+        'Не указано';
 
-    final String comment = toilet['comment']?.toString() ?? '';
+    final String comment =
+        latestReport?['comment']?.toString() ??
+        toilet['comment']?.toString() ??
+        '';
     final String distance = formatDistance(_distanceTo(toilet));
+    final hasPaper = _nullableBool(
+      PlaceInfo.effectiveValue(toilet, 'has_paper'),
+    );
+    final hasSoap = _nullableBool(PlaceInfo.effectiveValue(toilet, 'has_soap'));
+    final wheelchairAccessible =
+        _nullableBool(
+          PlaceInfo.effectiveValue(toilet, 'wheelchair_accessible'),
+        ) ??
+        _nullableBool(toilet['wheelchair']);
+    final phoneCharging = _nullableBool(
+      PlaceInfo.effectiveValue(toilet, 'phone_charging'),
+    );
 
     showModalBottomSheet(
       context: context,
@@ -634,6 +789,11 @@ class _HomePageState extends State<HomePage> {
       backgroundColor: Colors.transparent,
       builder: (context) {
         return _ToiletInfoSheet(
+          title: PlaceInfo.titleOf(toilet),
+          kindLabel: PlaceInfo.kindLabel(toilet),
+          placeKind: PlaceInfo.kindOf(toilet),
+          accessLabel: PlaceInfo.accessLabel(toilet),
+          hasToilet: PlaceInfo.hasToilet(toilet),
           author: author,
           isFree: isFree,
           feeKnown: feeKnown,
@@ -641,7 +801,17 @@ class _HomePageState extends State<HomePage> {
           condition: condition,
           comment: comment,
           distance: distance,
+          hasPaper: hasPaper,
+          hasSoap: hasSoap,
+          wheelchairAccessible: wheelchairAccessible,
+          phoneCharging: phoneCharging,
+          reportCount: PlaceInfo.reportCount(toilet),
           isBuildingRoute: isBuildingRoute,
+          isSubmittingReport: isSubmittingReport,
+          onReport: () async {
+            Navigator.of(context).pop();
+            await showReportForm(toilet);
+          },
           onRoute: () async {
             Navigator.of(context).pop();
             await buildRoute(toilet);
@@ -652,6 +822,110 @@ class _HomePageState extends State<HomePage> {
         );
       },
     );
+  }
+
+  Future<void> showReportForm(Map<String, dynamic> place) async {
+    if (isSubmittingReport) return;
+
+    if (ContentGuard.validateUsername(username) != null) {
+      await showUsernameDialog();
+      if (ContentGuard.validateUsername(username) != null) return;
+    }
+
+    final placeKey = PlaceInfo.keyOf(place);
+    final prefs = await SharedPreferences.getInstance();
+    final lastReportAt = prefs.getInt('last_report:$placeKey');
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    if (lastReportAt != null && now - lastReportAt < 300000) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'Подожди 5 минут перед следующим обновлением этой точки',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    final draft = await showModalBottomSheet<_PlaceReportDraft>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return _PlaceReportSheet(
+          title: PlaceInfo.titleOf(place),
+          hasToilet: PlaceInfo.hasToilet(place),
+          initialCleanliness:
+              (PlaceInfo.effectiveValue(place, 'cleanliness') as num?)?.toInt(),
+          initialCondition: PlaceInfo.effectiveValue(
+            place,
+            'condition',
+          )?.toString(),
+          initialPaper: _nullableBool(
+            PlaceInfo.effectiveValue(place, 'has_paper'),
+          ),
+          initialSoap: _nullableBool(
+            PlaceInfo.effectiveValue(place, 'has_soap'),
+          ),
+          initialWheelchair:
+              _nullableBool(
+                PlaceInfo.effectiveValue(place, 'wheelchair_accessible'),
+              ) ??
+              _nullableBool(place['wheelchair']),
+          initialPhoneCharging: _nullableBool(
+            PlaceInfo.effectiveValue(place, 'phone_charging'),
+          ),
+          initialAccessType: PlaceInfo.effectiveValue(
+            place,
+            'access_type',
+          )?.toString(),
+        );
+      },
+    );
+
+    if (draft == null || !mounted) return;
+
+    try {
+      setState(() => isSubmittingReport = true);
+      await _toiletRepository.addReport(
+        place: place,
+        username: username!,
+        cleanliness: draft.cleanliness,
+        condition: draft.condition,
+        hasPaper: draft.hasPaper,
+        hasSoap: draft.hasSoap,
+        wheelchairAccessible: draft.wheelchairAccessible,
+        phoneCharging: draft.phoneCharging,
+        accessType: draft.accessType,
+        comment: draft.comment.trim().isEmpty ? null : draft.comment.trim(),
+      );
+      await prefs.setInt('last_report:$placeKey', now);
+      await loadToilets();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text('Спасибо! Информация о месте обновлена'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red.shade700,
+          content: Text('Не удалось сохранить обновление: $error'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => isSubmittingReport = false);
+    }
   }
 
   // =========================================================
@@ -837,16 +1111,26 @@ class _HomePageState extends State<HomePage> {
 
                   final bool isFree = toilet['is_free'] == true;
                   final bool feeKnown = toilet['fee_known'] != false;
+                  final placeKind = PlaceInfo.kindOf(toilet);
 
                   return Marker(
                     point: LatLng(lat, lng),
                     width: 58,
                     height: 68,
-                    child: GestureDetector(
-                      onTap: () {
-                        showToiletInfo(toilet);
-                      },
-                      child: _ToiletMarker(isFree: isFree, feeKnown: feeKnown),
+                    child: Semantics(
+                      button: true,
+                      label:
+                          '${PlaceInfo.kindLabel(toilet)}: ${PlaceInfo.titleOf(toilet)}',
+                      child: GestureDetector(
+                        onTap: () {
+                          showToiletInfo(toilet);
+                        },
+                        child: _PlaceMarker(
+                          isFree: isFree,
+                          feeKnown: feeKnown,
+                          placeKind: placeKind,
+                        ),
+                      ),
                     ),
                   );
                 }).toList(),
@@ -881,7 +1165,23 @@ class _HomePageState extends State<HomePage> {
                 child: _GlassHeader(
                   username: username,
                   toiletCount: visibleToilets.length,
+                  onInstall: showInstallInstructions,
                 ),
+              ),
+            ),
+          ),
+
+          // ===================================================
+          // ЛЕГЕНДА КАТЕГОРИЙ
+          // ===================================================
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 88, 14, 0),
+                child: _MapLegendBar(),
               ),
             ),
           ),
@@ -932,6 +1232,7 @@ class _HomePageState extends State<HomePage> {
                     foregroundColor: Colors.white,
                     size: 62,
                     onPressed: isAddingToilet ? null : addToilet,
+                    tooltip: 'Добавить место',
                     child: isAddingToilet
                         ? const SizedBox(
                             width: 23,
@@ -989,111 +1290,239 @@ class _HomePageState extends State<HomePage> {
 class _GlassHeader extends StatelessWidget {
   final String? username;
   final int toiletCount;
+  final VoidCallback onInstall;
 
-  const _GlassHeader({required this.username, required this.toiletCount});
+  const _GlassHeader({
+    required this.username,
+    required this.toiletCount,
+    required this.onInstall,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      elevation: 10,
-      shadowColor: Colors.black.withValues(alpha: 0.15),
-      color: Colors.white.withValues(alpha: 0.96),
-      borderRadius: BorderRadius.circular(24),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.white, width: 1.5),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF22C55E), Color(0xFF15803D)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF16A34A).withValues(alpha: 0.25),
-                    blurRadius: 12,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.wc_rounded,
-                color: Colors.white,
-                size: 29,
-              ),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(26),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.white.withValues(alpha: 0.96),
+                const Color(0xFFF0FDF4).withValues(alpha: 0.92),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'TMaps',
-                    style: TextStyle(
-                      fontSize: 21,
-                      height: 1,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '$toiletCount '
-                    '${toiletCount == 1 ? 'туалет' : 'туалетов'} '
-                    'на карте',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: Colors.grey.shade600,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: Colors.white, width: 1.4),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF0F172A).withValues(alpha: 0.14),
+                blurRadius: 28,
+                offset: const Offset(0, 10),
               ),
-            ),
-            if (username != null)
+            ],
+          ),
+          child: Row(
+            children: [
               Container(
-                constraints: const BoxConstraints(maxWidth: 125),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 11,
-                  vertical: 9,
-                ),
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F3),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.person_rounded,
-                      size: 17,
-                      color: Color(0xFF15803D),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF34D399), Color(0xFF15803D)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF16A34A).withValues(alpha: 0.28),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
                     ),
-                    const SizedBox(width: 5),
-                    Flexible(
-                      child: Text(
-                        username!,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.travel_explore_rounded,
+                  color: Colors.white,
+                  size: 29,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'TMaps',
+                      style: TextStyle(
+                        fontSize: 21,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.6,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '$toiletCount мест рядом и по Казахстану',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
                 ),
               ),
-          ],
+              IconButton.filledTonal(
+                onPressed: onInstall,
+                tooltip: 'Установить TMaps',
+                icon: const Icon(Icons.install_mobile_rounded, size: 21),
+              ),
+              if (username != null) ...[
+                const SizedBox(width: 6),
+                Container(
+                  constraints: const BoxConstraints(maxWidth: 105),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(color: const Color(0xFFDDE9E1)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.person_rounded,
+                        size: 16,
+                        color: Color(0xFF15803D),
+                      ),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          username!,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _MapLegendBar extends StatelessWidget {
+  const _MapLegendBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Material(
+        elevation: 7,
+        shadowColor: Colors.black.withValues(alpha: 0.13),
+        color: Colors.white.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 44),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 5),
+            child: const Row(
+              children: [
+                _LegendItem(
+                  color: Color(0xFF16A34A),
+                  icon: Icons.wc_rounded,
+                  label: 'Туалет',
+                ),
+                _LegendItem(
+                  color: Color(0xFFDB2777),
+                  icon: Icons.add_location_alt_rounded,
+                  label: 'Сообщество',
+                ),
+                _LegendItem(
+                  color: Color(0xFFEA580C),
+                  icon: Icons.restaurant_rounded,
+                  label: 'Кафе',
+                ),
+                _LegendItem(
+                  color: Color(0xFF7C3AED),
+                  icon: Icons.local_gas_station_rounded,
+                  label: 'АЗС',
+                ),
+                _LegendItem(
+                  color: Color(0xFF0F766E),
+                  icon: Icons.apartment_rounded,
+                  label: 'Заведения',
+                ),
+                _LegendItem(
+                  color: Color(0xFF2563EB),
+                  icon: Icons.battery_charging_full_rounded,
+                  label: 'Телефон',
+                ),
+                _LegendItem(
+                  color: Color(0xFF0891B2),
+                  icon: Icons.ev_station_rounded,
+                  label: 'Электро',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LegendItem extends StatelessWidget {
+  final Color color;
+  final IconData icon;
+  final String label;
+
+  const _LegendItem({
+    required this.color,
+    required this.icon,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 27,
+            height: 27,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, color: color, size: 17),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+          ),
+        ],
       ),
     );
   }
@@ -1103,19 +1532,50 @@ class _GlassHeader extends StatelessWidget {
 // МАРКЕР ТУАЛЕТА
 // =============================================================
 
-class _ToiletMarker extends StatelessWidget {
+class _PlaceMarker extends StatelessWidget {
   final bool isFree;
   final bool feeKnown;
+  final PlaceKind placeKind;
 
-  const _ToiletMarker({required this.isFree, required this.feeKnown});
+  const _PlaceMarker({
+    required this.isFree,
+    required this.feeKnown,
+    required this.placeKind,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final color = !feeKnown
-        ? Colors.blueGrey.shade600
-        : isFree
-        ? const Color(0xFF16A34A)
-        : Colors.orange.shade700;
+    final (color, icon) = switch (placeKind) {
+      PlaceKind.communityToilet => (
+        const Color(0xFFDB2777),
+        Icons.add_location_alt_rounded,
+      ),
+      PlaceKind.phoneCharging => (
+        const Color(0xFF2563EB),
+        Icons.battery_charging_full_rounded,
+      ),
+      PlaceKind.evCharging => (
+        const Color(0xFF0891B2),
+        Icons.ev_station_rounded,
+      ),
+      PlaceKind.cafe => (const Color(0xFFEA580C), Icons.restaurant_rounded),
+      PlaceKind.fuel => (
+        const Color(0xFF7C3AED),
+        Icons.local_gas_station_rounded,
+      ),
+      PlaceKind.organization => (
+        const Color(0xFF0F766E),
+        Icons.apartment_rounded,
+      ),
+      _ => (
+        !feeKnown
+            ? Colors.blueGrey.shade600
+            : isFree
+            ? const Color(0xFF16A34A)
+            : Colors.orange.shade700,
+        Icons.wc_rounded,
+      ),
+    };
 
     return Column(
       children: [
@@ -1134,7 +1594,7 @@ class _ToiletMarker extends StatelessWidget {
               ),
             ],
           ),
-          child: const Icon(Icons.wc_rounded, color: Colors.white, size: 26),
+          child: Icon(icon, color: Colors.white, size: 26),
         ),
         Transform.translate(
           offset: const Offset(0, -5),
@@ -1378,6 +1838,11 @@ class _RoutePanel extends StatelessWidget {
 // =============================================================
 
 class _ToiletInfoSheet extends StatelessWidget {
+  final String title;
+  final String kindLabel;
+  final PlaceKind placeKind;
+  final String accessLabel;
+  final bool hasToilet;
   final String author;
   final bool isFree;
   final bool feeKnown;
@@ -1385,11 +1850,23 @@ class _ToiletInfoSheet extends StatelessWidget {
   final String condition;
   final String comment;
   final String distance;
+  final bool? hasPaper;
+  final bool? hasSoap;
+  final bool? wheelchairAccessible;
+  final bool? phoneCharging;
+  final int reportCount;
   final bool isBuildingRoute;
+  final bool isSubmittingReport;
+  final VoidCallback onReport;
   final VoidCallback onRoute;
   final VoidCallback onClose;
 
   const _ToiletInfoSheet({
+    required this.title,
+    required this.kindLabel,
+    required this.placeKind,
+    required this.accessLabel,
+    required this.hasToilet,
     required this.author,
     required this.isFree,
     required this.feeKnown,
@@ -1397,10 +1874,41 @@ class _ToiletInfoSheet extends StatelessWidget {
     required this.condition,
     required this.comment,
     required this.distance,
+    required this.hasPaper,
+    required this.hasSoap,
+    required this.wheelchairAccessible,
+    required this.phoneCharging,
+    required this.reportCount,
     required this.isBuildingRoute,
+    required this.isSubmittingReport,
+    required this.onReport,
     required this.onRoute,
     required this.onClose,
   });
+
+  IconData get placeIcon {
+    return switch (placeKind) {
+      PlaceKind.communityToilet => Icons.add_location_alt_rounded,
+      PlaceKind.phoneCharging => Icons.battery_charging_full_rounded,
+      PlaceKind.evCharging => Icons.ev_station_rounded,
+      PlaceKind.cafe => Icons.restaurant_rounded,
+      PlaceKind.fuel => Icons.local_gas_station_rounded,
+      PlaceKind.organization => Icons.apartment_rounded,
+      _ => Icons.wc_rounded,
+    };
+  }
+
+  Color get placeColor {
+    return switch (placeKind) {
+      PlaceKind.communityToilet => const Color(0xFFDB2777),
+      PlaceKind.phoneCharging => const Color(0xFF2563EB),
+      PlaceKind.evCharging => const Color(0xFF0891B2),
+      PlaceKind.cafe => const Color(0xFFEA580C),
+      PlaceKind.fuel => const Color(0xFF7C3AED),
+      PlaceKind.organization => const Color(0xFF0F766E),
+      _ => const Color(0xFF15803D),
+    };
+  }
 
   Color get conditionColor {
     if (condition == 'Хорошее') {
@@ -1452,36 +1960,40 @@ class _ToiletInfoSheet extends StatelessWidget {
                       width: 62,
                       height: 62,
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFDCFCE7), Color(0xFFBBF7D0)],
+                        gradient: LinearGradient(
+                          colors: [
+                            placeColor.withValues(alpha: 0.12),
+                            placeColor.withValues(alpha: 0.22),
+                          ],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
                         borderRadius: BorderRadius.circular(19),
                       ),
-                      child: const Icon(
-                        Icons.wc_rounded,
-                        color: Color(0xFF15803D),
-                        size: 34,
-                      ),
+                      child: Icon(placeIcon, color: placeColor, size: 34),
                     ),
                     const SizedBox(width: 15),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Туалет',
-                            style: TextStyle(
+                            title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.w900,
                               letterSpacing: -0.5,
                             ),
                           ),
-                          SizedBox(height: 4),
+                          const SizedBox(height: 4),
                           Text(
-                            'Общественное место',
-                            style: TextStyle(color: Colors.grey, fontSize: 14),
+                            kindLabel,
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 14,
+                            ),
                           ),
                         ],
                       ),
@@ -1523,7 +2035,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                             : isFree
                             ? const Color(0xFF16A34A)
                             : Colors.orange.shade700,
-                        title: 'Стоимость',
+                        title: hasToilet ? 'Стоимость' : 'Зарядка',
                         value: !feeKnown
                             ? 'Не указано'
                             : isFree
@@ -1551,7 +2063,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                       child: _InfoCard(
                         icon: Icons.person_rounded,
                         iconColor: const Color(0xFF2563EB),
-                        title: 'Добавил',
+                        title: reportCount > 0 ? 'Обновил' : 'Добавил',
                         value: author,
                       ),
                     ),
@@ -1561,10 +2073,56 @@ class _ToiletInfoSheet extends StatelessWidget {
                 const SizedBox(height: 10),
 
                 _InfoCard(
+                  icon: Icons.door_front_door_rounded,
+                  iconColor: placeColor,
+                  title: 'Доступ',
+                  value: accessLabel,
+                ),
+
+                const SizedBox(height: 10),
+
+                _InfoCard(
                   icon: Icons.near_me_rounded,
                   iconColor: const Color(0xFF2563EB),
                   title: 'Расстояние по прямой',
                   value: distance,
+                ),
+
+                const SizedBox(height: 18),
+
+                const Text(
+                  'Что есть на месте',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (hasToilet)
+                      _AmenityStatusChip(
+                        icon: Icons.receipt_long_rounded,
+                        label: 'Бумага',
+                        value: hasPaper,
+                      ),
+                    if (hasToilet)
+                      _AmenityStatusChip(
+                        icon: Icons.soap_rounded,
+                        label: 'Мыло',
+                        value: hasSoap,
+                      ),
+                    if (hasToilet)
+                      _AmenityStatusChip(
+                        icon: Icons.accessible_rounded,
+                        label: 'Для коляски',
+                        value: wheelchairAccessible,
+                      ),
+                    _AmenityStatusChip(
+                      icon: Icons.bolt_rounded,
+                      label: 'Зарядка телефона',
+                      value: phoneCharging,
+                    ),
+                  ],
                 ),
 
                 if (comment.isNotEmpty) ...[
@@ -1587,9 +2145,11 @@ class _ToiletInfoSheet extends StatelessWidget {
                               color: Colors.grey.shade700,
                             ),
                             const SizedBox(width: 8),
-                            const Text(
-                              'Комментарий',
-                              style: TextStyle(
+                            Text(
+                              reportCount > 0
+                                  ? 'Последний отзыв'
+                                  : 'Комментарий',
+                              style: const TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 15,
                               ),
@@ -1611,6 +2171,21 @@ class _ToiletInfoSheet extends StatelessWidget {
                 ],
 
                 const SizedBox(height: 20),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: isSubmittingReport ? null : onReport,
+                    icon: const Icon(Icons.rate_review_outlined),
+                    label: Text(
+                      reportCount == 0
+                          ? 'Обновить информацию или оставить отзыв'
+                          : 'Отзывы и обновления: $reportCount · Добавить',
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 10),
 
                 SizedBox(
                   width: double.infinity,
@@ -1712,16 +2287,436 @@ class _InfoCard extends StatelessWidget {
   }
 }
 
+class _AmenityStatusChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool? value;
+
+  const _AmenityStatusChip({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = value == true
+        ? const Color(0xFF15803D)
+        : value == false
+        ? const Color(0xFFB91C1C)
+        : const Color(0xFF64748B);
+    final status = value == true
+        ? 'есть'
+        : value == false
+        ? 'нет'
+        : 'неизвестно';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 17, color: color),
+          const SizedBox(width: 6),
+          Text(
+            '$label: $status',
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InstallStep extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String text;
+
+  const _InstallStep({
+    required this.icon,
+    required this.title,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F8FA),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: const Color(0xFF15803D)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                Text(text, style: TextStyle(color: Colors.grey.shade700)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlaceReportDraft {
+  final int cleanliness;
+  final String condition;
+  final bool? hasPaper;
+  final bool? hasSoap;
+  final bool? wheelchairAccessible;
+  final bool? phoneCharging;
+  final String accessType;
+  final String comment;
+
+  const _PlaceReportDraft({
+    required this.cleanliness,
+    required this.condition,
+    required this.hasPaper,
+    required this.hasSoap,
+    required this.wheelchairAccessible,
+    required this.phoneCharging,
+    required this.accessType,
+    required this.comment,
+  });
+}
+
+class _PlaceReportSheet extends StatefulWidget {
+  final String title;
+  final bool hasToilet;
+  final int? initialCleanliness;
+  final String? initialCondition;
+  final bool? initialPaper;
+  final bool? initialSoap;
+  final bool? initialWheelchair;
+  final bool? initialPhoneCharging;
+  final String? initialAccessType;
+
+  const _PlaceReportSheet({
+    required this.title,
+    required this.hasToilet,
+    required this.initialCleanliness,
+    required this.initialCondition,
+    required this.initialPaper,
+    required this.initialSoap,
+    required this.initialWheelchair,
+    required this.initialPhoneCharging,
+    required this.initialAccessType,
+  });
+
+  @override
+  State<_PlaceReportSheet> createState() => _PlaceReportSheetState();
+}
+
+class _PlaceReportSheetState extends State<_PlaceReportSheet> {
+  late int cleanliness;
+  late String condition;
+  late bool? hasPaper;
+  late bool? hasSoap;
+  late bool? wheelchairAccessible;
+  late bool? phoneCharging;
+  late String accessType;
+  final commentController = TextEditingController();
+
+  static const conditions = ['Хорошее', 'Среднее', 'Плохое'];
+  static const accessTypes = [
+    'public',
+    'customers',
+    'permissive',
+    'destination',
+    'unknown',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    cleanliness =
+        widget.initialCleanliness == null ||
+            widget.initialCleanliness! < 1 ||
+            widget.initialCleanliness! > 5
+        ? 3
+        : widget.initialCleanliness!;
+    condition = conditions.contains(widget.initialCondition)
+        ? widget.initialCondition!
+        : 'Среднее';
+    hasPaper = widget.initialPaper;
+    hasSoap = widget.initialSoap;
+    wheelchairAccessible = widget.initialWheelchair;
+    phoneCharging = widget.initialPhoneCharging;
+    accessType = accessTypes.contains(widget.initialAccessType)
+        ? widget.initialAccessType!
+        : 'unknown';
+  }
+
+  @override
+  void dispose() {
+    commentController.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    final issue = ContentGuard.validateComment(commentController.text);
+    if (issue != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(behavior: SnackBarBehavior.floating, content: Text(issue)),
+      );
+      return;
+    }
+
+    Navigator.of(context).pop(
+      _PlaceReportDraft(
+        cleanliness: cleanliness,
+        condition: condition,
+        hasPaper: hasPaper,
+        hasSoap: hasSoap,
+        wheelchairAccessible: wheelchairAccessible,
+        phoneCharging: phoneCharging,
+        accessType: accessType,
+        comment: commentController.text,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.92,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Обновить информацию',
+                  style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  widget.title,
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 18),
+                const _SectionTitle(
+                  icon: Icons.star_outline_rounded,
+                  title: 'Текущая оценка',
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: List.generate(5, (index) {
+                    final star = index + 1;
+                    return IconButton(
+                      onPressed: () => setState(() => cleanliness = star),
+                      padding: const EdgeInsets.only(right: 4),
+                      constraints: const BoxConstraints(),
+                      icon: Icon(
+                        star <= cleanliness
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        color: Colors.amber.shade700,
+                        size: 36,
+                      ),
+                    );
+                  }),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: condition,
+                  decoration: const InputDecoration(
+                    labelText: 'Состояние',
+                    prefixIcon: Icon(Icons.health_and_safety_outlined),
+                  ),
+                  items: conditions
+                      .map(
+                        (value) =>
+                            DropdownMenuItem(value: value, child: Text(value)),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) setState(() => condition = value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: accessType,
+                  decoration: const InputDecoration(
+                    labelText: 'Кому можно зайти',
+                    prefixIcon: Icon(Icons.door_front_door_outlined),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'public', child: Text('Всем')),
+                    DropdownMenuItem(
+                      value: 'customers',
+                      child: Text('Только клиентам'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'permissive',
+                      child: Text('Обычно пускают'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'destination',
+                      child: Text('Только посетителям'),
+                    ),
+                    DropdownMenuItem(value: 'unknown', child: Text('Не знаю')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setState(() => accessType = value);
+                  },
+                ),
+                const SizedBox(height: 16),
+                if (widget.hasToilet) ...[
+                  _TriStateField(
+                    label: 'Туалетная бумага',
+                    icon: Icons.receipt_long_outlined,
+                    value: hasPaper,
+                    onChanged: (value) => setState(() => hasPaper = value),
+                  ),
+                  const SizedBox(height: 12),
+                  _TriStateField(
+                    label: 'Мыло',
+                    icon: Icons.soap_outlined,
+                    value: hasSoap,
+                    onChanged: (value) => setState(() => hasSoap = value),
+                  ),
+                  const SizedBox(height: 12),
+                  _TriStateField(
+                    label: 'Доступ для коляски',
+                    icon: Icons.accessible_outlined,
+                    value: wheelchairAccessible,
+                    onChanged: (value) =>
+                        setState(() => wheelchairAccessible = value),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                _TriStateField(
+                  label: 'Можно зарядить телефон',
+                  icon: Icons.bolt_outlined,
+                  value: phoneCharging,
+                  onChanged: (value) => setState(() => phoneCharging = value),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: commentController,
+                  maxLength: 300,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Отзыв или уточнение',
+                    hintText: 'Например: бумага есть, вход со двора',
+                    alignLabelWithHint: true,
+                  ),
+                ),
+                Text(
+                  'Обновление будет видно всем пользователям TMaps.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: submit,
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Опубликовать обновление'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TriStateField extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool? value;
+  final ValueChanged<bool?> onChanged;
+
+  const _TriStateField({
+    required this.label,
+    required this.icon,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      initialValue: value == null
+          ? 'unknown'
+          : value!
+          ? 'yes'
+          : 'no',
+      decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)),
+      items: const [
+        DropdownMenuItem(value: 'yes', child: Text('Есть')),
+        DropdownMenuItem(value: 'no', child: Text('Нет')),
+        DropdownMenuItem(value: 'unknown', child: Text('Не знаю')),
+      ],
+      onChanged: (selection) {
+        onChanged(switch (selection) {
+          'yes' => true,
+          'no' => false,
+          _ => null,
+        });
+      },
+    );
+  }
+}
+
 // =============================================================
 // ФОРМА ДОБАВЛЕНИЯ
 // =============================================================
 
 class _AddToiletSheet extends StatelessWidget {
+  final PlaceKind placeKind;
   final bool isFree;
   final int cleanliness;
   final String condition;
   final String comment;
 
+  final ValueChanged<PlaceKind> onPlaceKindChanged;
   final ValueChanged<bool> onFreeChanged;
   final ValueChanged<int> onCleanlinessChanged;
   final ValueChanged<String> onConditionChanged;
@@ -1731,10 +2726,12 @@ class _AddToiletSheet extends StatelessWidget {
   final VoidCallback onAdd;
 
   const _AddToiletSheet({
+    required this.placeKind,
     required this.isFree,
     required this.cleanliness,
     required this.condition,
     required this.comment,
+    required this.onPlaceKindChanged,
     required this.onFreeChanged,
     required this.onCleanlinessChanged,
     required this.onConditionChanged,
@@ -1745,6 +2742,21 @@ class _AddToiletSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isToilet = placeKind == PlaceKind.communityToilet;
+    final (placeIcon, placeColor, placeTitle) = switch (placeKind) {
+      PlaceKind.phoneCharging => (
+        Icons.battery_charging_full_rounded,
+        const Color(0xFF2563EB),
+        'Зарядка телефона',
+      ),
+      PlaceKind.evCharging => (
+        Icons.ev_station_rounded,
+        const Color(0xFF0891B2),
+        'Электрозарядка',
+      ),
+      _ => (Icons.wc_rounded, const Color(0xFF15803D), 'Туалет'),
+    };
+
     return SafeArea(
       child: Container(
         constraints: const BoxConstraints(maxHeight: 700),
@@ -1776,36 +2788,82 @@ class _AddToiletSheet extends StatelessWidget {
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFDCFCE7),
+                      color: placeColor.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: const Icon(
-                      Icons.add_location_alt_rounded,
-                      color: Color(0xFF15803D),
-                      size: 28,
-                    ),
+                    child: Icon(placeIcon, color: placeColor, size: 28),
                   ),
                   const SizedBox(width: 13),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Добавить туалет',
-                          style: TextStyle(
+                          'Добавить место',
+                          style: const TextStyle(
                             fontSize: 23,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        SizedBox(height: 3),
+                        const SizedBox(height: 3),
                         Text(
-                          'Помоги другим найти его',
-                          style: TextStyle(color: Colors.grey),
+                          placeTitle,
+                          style: const TextStyle(color: Colors.grey),
                         ),
                       ],
                     ),
                   ),
                 ],
+              ),
+
+              const SizedBox(height: 24),
+
+              const _SectionTitle(
+                icon: Icons.category_outlined,
+                title: 'Категория',
+              ),
+
+              const SizedBox(height: 10),
+
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F3),
+                  borderRadius: BorderRadius.circular(17),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _ChoiceButton(
+                        selected: placeKind == PlaceKind.communityToilet,
+                        icon: Icons.wc_rounded,
+                        text: 'Туалет',
+                        color: const Color(0xFF15803D),
+                        onTap: () =>
+                            onPlaceKindChanged(PlaceKind.communityToilet),
+                      ),
+                    ),
+                    Expanded(
+                      child: _ChoiceButton(
+                        selected: placeKind == PlaceKind.phoneCharging,
+                        icon: Icons.battery_charging_full_rounded,
+                        text: 'Телефон',
+                        color: const Color(0xFF2563EB),
+                        onTap: () =>
+                            onPlaceKindChanged(PlaceKind.phoneCharging),
+                      ),
+                    ),
+                    Expanded(
+                      child: _ChoiceButton(
+                        selected: placeKind == PlaceKind.evCharging,
+                        icon: Icons.ev_station_rounded,
+                        text: 'Электро',
+                        color: const Color(0xFF0891B2),
+                        onTap: () => onPlaceKindChanged(PlaceKind.evCharging),
+                      ),
+                    ),
+                  ],
+                ),
               ),
 
               const SizedBox(height: 24),
@@ -1851,9 +2909,9 @@ class _AddToiletSheet extends StatelessWidget {
               const SizedBox(height: 22),
 
               // Чистота
-              const _SectionTitle(
+              _SectionTitle(
                 icon: Icons.star_outline_rounded,
-                title: 'Чистота',
+                title: isToilet ? 'Чистота' : 'Общая оценка',
               ),
 
               const SizedBox(height: 8),
@@ -1925,10 +2983,12 @@ class _AddToiletSheet extends StatelessWidget {
                 maxLines: 3,
                 maxLength: 300,
                 onChanged: onCommentChanged,
-                decoration: const InputDecoration(
-                  hintText: 'Например: находится внутри ТЦ',
+                decoration: InputDecoration(
+                  hintText: isToilet
+                      ? 'Например: находится внутри ТЦ'
+                      : 'Например: розетка у стойки, работает круглосуточно',
                   alignLabelWithHint: true,
-                  prefixIcon: Padding(
+                  prefixIcon: const Padding(
                     padding: EdgeInsets.only(bottom: 55),
                     child: Icon(Icons.edit_note_rounded),
                   ),
@@ -1957,7 +3017,7 @@ class _AddToiletSheet extends StatelessWidget {
                     child: FilledButton.icon(
                       onPressed: onAdd,
                       icon: const Icon(Icons.add_location_alt_rounded),
-                      label: const Text('Добавить'),
+                      label: const Text('Добавить место'),
                     ),
                   ),
                 ],

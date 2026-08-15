@@ -1,35 +1,29 @@
 {
-    "name": "tmaps",
-    "short_name": "tmaps",
-    "start_url": ".",
+    "id": "/",
+    "name": "TMaps — туалеты и зарядка рядом",
+    "short_name": "TMaps",
+    "start_url": "/",
+    "scope": "/",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F7F8FA",
+    "theme_color": "#15803D",
+    "description": "Карта туалетов, доступных заведений и зарядных мест для телефона и электромобиля в Казахстане.",
+    "lang": "ru",
+    "categories": ["navigation", "travel", "utilities"],
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
         {
-            "src": "icons/Icon-192.png",
-            "sizes": "192x192",
-            "type": "image/png"
-        },
-        {
-            "src": "icons/Icon-512.png",
-            "sizes": "512x512",
-            "type": "image/png"
-        },
-        {
-            "src": "icons/Icon-maskable-192.png",
+            "src": "icons/TMaps-192.png",
             "sizes": "192x192",
             "type": "image/png",
-            "purpose": "maskable"
+            "purpose": "any"
         },
         {
-            "src": "icons/Icon-maskable-512.png",
+            "src": "icons/TMaps-512.png",
             "sizes": "512x512",
             "type": "image/png",
-            "purpose": "maskable"
+            "purpose": "any maskable"
         }
     ]
 }

@@ -4,13 +4,16 @@ abstract final class AppTheme {
   static const green = Color(0xFF16A34A);
 
   static ThemeData get light {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: green,
+      brightness: Brightness.light,
+      surface: const Color(0xFFFCFDFC),
+    );
+
     return ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: green,
-        brightness: Brightness.light,
-      ),
-      scaffoldBackgroundColor: Colors.white,
+      colorScheme: colorScheme,
+      scaffoldBackgroundColor: const Color(0xFFF8FAF9),
       fontFamily: 'Roboto',
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
@@ -18,7 +21,11 @@ abstract final class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: const Color(0xFFF7F8FA),
+        fillColor: const Color(0xFFF3F6F4),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 16,
+        ),
         border: _inputBorder(),
         enabledBorder: _inputBorder(),
         focusedBorder: OutlineInputBorder(
@@ -44,6 +51,27 @@ abstract final class AppTheme {
         backgroundColor: green,
         foregroundColor: Colors.white,
       ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: Color(0xFFFCFDFC),
+        modalBackgroundColor: Color(0xFFFCFDFC),
+        showDragHandle: true,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+        ),
+      ),
+      dialogTheme: const DialogThemeData(
+        backgroundColor: Color(0xFFFCFDFC),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(28)),
+        ),
+      ),
+      snackBarTheme: const SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(14)),
+        ),
+      ),
+      dividerTheme: const DividerThemeData(color: Color(0xFFE5EBE7)),
     );
   }
 

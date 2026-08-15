@@ -11,14 +11,21 @@ void main() {
     expect(const TMapsApp(), isA<TMapsApp>());
   });
 
-  test('Kazakhstan OpenStreetMap toilet dataset is bundled', () async {
+  test('Kazakhstan OpenStreetMap place dataset is bundled', () async {
     final json = await rootBundle.loadString(
       'assets/data/kazakhstan_toilets.json',
     );
     final payload = jsonDecode(json) as Map<String, dynamic>;
-    final toilets = payload['toilets'] as List<dynamic>;
+    final places = (payload['places'] ?? payload['toilets']) as List<dynamic>;
 
-    expect(toilets, hasLength(payload['count'] as int));
-    expect(toilets, isNotEmpty);
+    expect(places, hasLength(payload['count'] as int));
+    expect(places, isNotEmpty);
+    expect(
+      places.where(
+        (place) =>
+            (place as Map<String, dynamic>)['place_kind'] == 'public_toilet',
+      ),
+      isNotEmpty,
+    );
   });
 }

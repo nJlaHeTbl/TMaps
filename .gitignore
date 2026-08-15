@@ -30,6 +30,9 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /coverage/
+/build/native_assets/
+/build/test_cache/
+/build/unit_test_assets/
 
 # Symbolication related
 app.*.symbols
