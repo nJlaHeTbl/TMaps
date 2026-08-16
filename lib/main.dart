@@ -21,6 +21,7 @@ import 'presentation/place_category_style.dart';
 import 'services/live_location_service.dart';
 import 'services/route_service.dart';
 import 'widgets/map_overlays.dart';
+import 'widgets/place_search_sheet.dart';
 
 bool? _nullableBool(dynamic value) {
   if (value is bool) return value;
@@ -449,6 +450,41 @@ class _HomePageState extends State<HomePage> {
       (toilet['lat'] as num).toDouble(),
       (toilet['lng'] as num).toDouble(),
     );
+  }
+
+  Future<void> showPlaceSearch() async {
+    final camera = _mapController.camera;
+    final place = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppPalette.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      builder: (context) =>
+          PlaceSearchSheet(places: toilets, origin: camera.center),
+    );
+
+    if (place == null || !mounted) return;
+
+    final kind = PlaceInfo.kindOf(place);
+    final point = LatLng(
+      (place['lat'] as num).toDouble(),
+      (place['lng'] as num).toDouble(),
+    );
+
+    setState(() {
+      selectedCategory = switch (kind) {
+        PlaceKind.publicToilet || PlaceKind.communityToilet => null,
+        _ => kind,
+      };
+      _followUser = false;
+    });
+    _mapController.move(point, max(_mapZoom, 16.8));
+
+    await Future<void>.delayed(const Duration(milliseconds: 320));
+    if (mounted) showToiletInfo(place);
   }
 
   Future<void> showFilters() async {
@@ -1451,6 +1487,14 @@ class _HomePageState extends State<HomePage> {
                       onZoomOut: _mapZoom > _minMapZoom
                           ? () => _changeMapZoom(-0.75)
                           : null,
+                    ),
+                    const SizedBox(height: 12),
+                    _MapActionButton(
+                      icon: Icons.search_rounded,
+                      onPressed: showPlaceSearch,
+                      tooltip: 'Поиск места',
+                      backgroundColor: const Color(0xFFE6FFFA),
+                      foregroundColor: AppPalette.aqua,
                     ),
                     const SizedBox(height: 12),
                     _MapActionButton(
