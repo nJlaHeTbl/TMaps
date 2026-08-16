@@ -1,8 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 abstract final class MapDisplayPolicy {
-  static const double minPlaceZoom = 8.7;
+  static const double minPlaceZoom = 7.2;
   static const int maxVisibleMarkers = 90;
 
   static final kazakhstanBounds = LatLngBounds(
@@ -51,7 +53,66 @@ abstract final class MapDisplayPolicy {
       ).compareTo(_distanceSquared(second, centerLatitude, centerLongitude));
     });
 
-    return candidates.take(maxMarkers).toList(growable: false);
+    return _spreadAcrossBounds(
+      candidates,
+      bounds,
+      _limitForZoom(zoom, maxMarkers),
+    );
+  }
+
+  static int _limitForZoom(double zoom, int requestedLimit) {
+    final adaptiveLimit = switch (zoom) {
+      < 8.5 => 12,
+      < 10.5 => 22,
+      < 12.5 => 36,
+      < 14.5 => 52,
+      _ => requestedLimit,
+    };
+    return adaptiveLimit < requestedLimit ? adaptiveLimit : requestedLimit;
+  }
+
+  static List<Map<String, dynamic>> _spreadAcrossBounds(
+    List<Map<String, dynamic>> candidates,
+    LatLngBounds bounds,
+    int limit,
+  ) {
+    if (candidates.length <= limit) return candidates;
+
+    final latitudeSpan = math.max(
+      (bounds.north - bounds.south).abs(),
+      0.000001,
+    );
+    final longitudeSpan = math.max((bounds.east - bounds.west).abs(), 0.000001);
+    final aspectRatio = longitudeSpan / latitudeSpan;
+    final columns = math.sqrt(limit * aspectRatio).round().clamp(1, limit);
+    final rows = (limit / columns).ceil();
+    final buckets = <String, List<Map<String, dynamic>>>{};
+
+    for (final place in candidates) {
+      final latitude = (place['lat'] as num).toDouble();
+      final longitude = (place['lng'] as num).toDouble();
+      final row = (((latitude - bounds.south) / latitudeSpan) * rows)
+          .floor()
+          .clamp(0, rows - 1);
+      final column = (((longitude - bounds.west) / longitudeSpan) * columns)
+          .floor()
+          .clamp(0, columns - 1);
+      buckets.putIfAbsent('$row:$column', () => []).add(place);
+    }
+
+    final spread = <Map<String, dynamic>>[];
+    for (var layer = 0; spread.length < limit; layer++) {
+      var addedAny = false;
+      for (final bucket in buckets.values) {
+        if (layer >= bucket.length) continue;
+        spread.add(bucket[layer]);
+        addedAny = true;
+        if (spread.length == limit) break;
+      }
+      if (!addedAny) break;
+    }
+
+    return spread;
   }
 
   static int _priorityOf(Map<String, dynamic> place) {

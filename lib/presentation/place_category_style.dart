@@ -5,8 +5,8 @@ import '../core/place_info.dart';
 
 extension PlaceKindStyle on PlaceKind {
   String get shortLabel => switch (this) {
-    PlaceKind.publicToilet => 'Туалет',
-    PlaceKind.communityToilet => 'Сообщество',
+    PlaceKind.publicToilet => 'Обществ.',
+    PlaceKind.communityToilet => 'От людей',
     PlaceKind.cafe => 'Еда',
     PlaceKind.fuel => 'АЗС',
     PlaceKind.organization => 'Места',

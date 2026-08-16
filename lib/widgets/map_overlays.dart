@@ -310,16 +310,81 @@ class MapZoomHint extends StatelessWidget {
       child: const Padding(
         padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.zoom_in_map_rounded, color: AppPalette.mint, size: 20),
-            SizedBox(width: 7),
-            Text(
-              'Приблизь карту — покажем места рядом',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w800,
+            SizedBox(width: 9),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Приблизь нужный город',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    'Покажем только точки в этой области',
+                    style: TextStyle(color: Color(0xFFD8F7EA), fontSize: 10.5),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class MapEmptyHint extends StatelessWidget {
+  const MapEmptyHint({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 10,
+      color: Colors.white.withValues(alpha: 0.96),
+      borderRadius: BorderRadius.circular(17),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: AppPalette.coral.withValues(alpha: 0.13),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: const Icon(
+                Icons.explore_off_rounded,
+                color: AppPalette.coral,
+                size: 19,
+              ),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Здесь нет точек «$label»',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const Text(
+                    'Передвинь карту или немного отдали её',
+                    style: TextStyle(color: AppPalette.muted, fontSize: 10.5),
+                  ),
+                ],
               ),
             ),
           ],

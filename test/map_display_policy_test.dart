@@ -28,4 +28,45 @@ void main() {
 
     expect(visible.map((place) => place['name']), ['Талдыкорган']);
   });
+
+  test('на масштабе области оставляет компактный обзор', () {
+    final manyPlaces = List.generate(
+      30,
+      (index) => {
+        'lat': 44.0 + index / 100,
+        'lng': 77.0 + index / 100,
+        'place_kind': 'public_toilet',
+      },
+    );
+
+    final visible = MapDisplayPolicy.placesInside(
+      manyPlaces,
+      zoom: 8,
+      bounds: LatLngBounds(const LatLng(43, 76), const LatLng(46, 80)),
+    );
+
+    expect(visible, hasLength(12));
+  });
+
+  test('распределяет метки по всей видимой области', () {
+    final clusteredPlaces = [
+      for (var index = 0; index < 20; index++)
+        {
+          'name': 'Центр $index',
+          'lat': 45.0 + index / 10000,
+          'lng': 78.0 + index / 10000,
+          'place_kind': 'cafe',
+        },
+      {'name': 'Север', 'lat': 45.8, 'lng': 78.8, 'place_kind': 'cafe'},
+    ];
+
+    final visible = MapDisplayPolicy.placesInside(
+      clusteredPlaces,
+      zoom: 8,
+      bounds: LatLngBounds(const LatLng(44.9, 77.9), const LatLng(46, 79)),
+    );
+
+    expect(visible, hasLength(12));
+    expect(visible.any((place) => place['name'] == 'Север'), isTrue);
+  });
 }

@@ -15,6 +15,7 @@ import 'core/app_theme.dart';
 import 'core/content_guard.dart';
 import 'core/map_display_policy.dart';
 import 'core/place_info.dart';
+import 'core/place_visibility_policy.dart';
 import 'data/toilet_repository.dart';
 import 'presentation/place_category_style.dart';
 import 'services/live_location_service.dart';
@@ -112,44 +113,18 @@ class _HomePageState extends State<HomePage> {
 
   List<Map<String, dynamic>> get visibleToilets {
     return toilets
-        .where((toilet) {
-          final placeKind = PlaceInfo.kindOf(toilet);
-          final hasToilet = PlaceInfo.hasToilet(toilet);
-
-          if (selectedCategory != null && placeKind != selectedCategory) {
-            return false;
-          }
-
-          if (showFreeOnly &&
-              (!hasToilet ||
-                  toilet['fee_known'] == false ||
-                  toilet['is_free'] != true)) {
-            return false;
-          }
-
-          final wheelchair = PlaceInfo.effectiveValue(
-            toilet,
-            'wheelchair_accessible',
-          );
-          if (showWheelchairOnly &&
-              (wheelchair != true && toilet['wheelchair'] != 'yes')) {
-            return false;
-          }
-
-          if (showCommunityOnly && toilet['source'] == 'openstreetmap') {
-            return false;
-          }
-
-          if (!showVenueToilets && PlaceInfo.isVenue(toilet)) return false;
-          if (!showPhoneCharging && placeKind == PlaceKind.phoneCharging) {
-            return false;
-          }
-          if (!showEvCharging && placeKind == PlaceKind.evCharging) {
-            return false;
-          }
-
-          return true;
-        })
+        .where(
+          (place) => PlaceVisibilityPolicy.matches(
+            place,
+            selectedCategory: selectedCategory,
+            freeOnly: showFreeOnly,
+            wheelchairOnly: showWheelchairOnly,
+            communityOnly: showCommunityOnly,
+            venueToilets: showVenueToilets,
+            phoneCharging: showPhoneCharging,
+            evCharging: showEvCharging,
+          ),
+        )
         .toList(growable: false);
   }
 
@@ -158,11 +133,24 @@ class _HomePageState extends State<HomePage> {
         visibleToilets,
         zoom: _mapZoom,
         bounds: _visibleMapBounds,
-        maxMarkers: MediaQuery.sizeOf(context).width < 600 ? 55 : 90,
+        maxMarkers: MediaQuery.sizeOf(context).width < 600 ? 44 : 72,
       );
 
   bool get showZoomHint =>
       !MapDisplayPolicy.canShowPlaces(_mapZoom) && !_isPickingLocation;
+
+  bool get showEmptyAreaHint =>
+      MapDisplayPolicy.canShowPlaces(_mapZoom) &&
+      displayedPlaces.isEmpty &&
+      visibleToilets.isNotEmpty &&
+      !_isPickingLocation;
+
+  String get _mapScopeLabel =>
+      selectedCategory == null ? 'Туалеты' : selectedCategory!.shortLabel;
+
+  String get _mapSummary => selectedCategory == null
+      ? '${visibleToilets.length} туалетов по Казахстану'
+      : '${visibleToilets.length} мест • ${selectedCategory!.shortLabel}';
 
   bool get filtersActive =>
       selectedCategory != null ||
@@ -390,8 +378,19 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      final availableToilets = visibleToilets
-          .where(PlaceInfo.hasToilet)
+      final availableToilets = toilets
+          .where(
+            (place) => PlaceVisibilityPolicy.matches(
+              place,
+              selectedCategory: null,
+              freeOnly: showFreeOnly,
+              wheelchairOnly: showWheelchairOnly,
+              communityOnly: showCommunityOnly,
+              venueToilets: showVenueToilets,
+              phoneCharging: true,
+              evCharging: true,
+            ),
+          )
           .toList(growable: false);
 
       if (availableToilets.isEmpty) {
@@ -490,8 +489,8 @@ class _HomePageState extends State<HomePage> {
                       runSpacing: 8,
                       children: [
                         _FilterCategoryChip(
-                          label: 'Все места',
-                          icon: Icons.layers_rounded,
+                          label: 'Все туалеты',
+                          icon: Icons.wc_rounded,
                           color: green,
                           selected: category == null,
                           onSelected: () {
@@ -1389,7 +1388,7 @@ class _HomePageState extends State<HomePage> {
                   padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
                   child: _GlassHeader(
                     username: username,
-                    toiletCount: visibleToilets.length,
+                    summary: _mapSummary,
                     onInstall: showInstallInstructions,
                   ),
                 ),
@@ -1497,7 +1496,10 @@ class _HomePageState extends State<HomePage> {
               left: 16,
               bottom: routePoints.length >= 2 ? 150 : 28,
               child: SafeArea(
-                child: _MapCounter(count: displayedPlaces.length),
+                child: _MapCounter(
+                  count: displayedPlaces.length,
+                  label: _mapScopeLabel,
+                ),
               ),
             ),
 
@@ -1524,8 +1526,17 @@ class _HomePageState extends State<HomePage> {
           if (showZoomHint)
             const Positioned(
               left: 16,
+              right: 90,
               bottom: 28,
               child: SafeArea(child: MapZoomHint()),
+            ),
+
+          if (showEmptyAreaHint)
+            Positioned(
+              left: 16,
+              right: 90,
+              bottom: 28,
+              child: SafeArea(child: MapEmptyHint(label: _mapScopeLabel)),
             ),
 
           if (!_isPickingLocation &&
@@ -1561,12 +1572,12 @@ class _HomePageState extends State<HomePage> {
 
 class _GlassHeader extends StatelessWidget {
   final String? username;
-  final int toiletCount;
+  final String summary;
   final VoidCallback onInstall;
 
   const _GlassHeader({
     required this.username,
-    required this.toiletCount,
+    required this.summary,
     required this.onInstall,
   });
 
@@ -1636,7 +1647,7 @@ class _GlassHeader extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '$toiletCount мест рядом и по Казахстану',
+                      summary,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1722,8 +1733,8 @@ class _MapLegendBar extends StatelessWidget {
               children: [
                 _LegendItem(
                   color: Color(0xFF16A34A),
-                  icon: Icons.layers_rounded,
-                  label: 'Все',
+                  icon: Icons.wc_rounded,
+                  label: 'Туалеты',
                   selected: selectedKind == null,
                   onTap: () => onSelected(null),
                 ),
@@ -2076,8 +2087,9 @@ class _MapActionButton extends StatelessWidget {
 
 class _MapCounter extends StatelessWidget {
   final int count;
+  final String label;
 
-  const _MapCounter({required this.count});
+  const _MapCounter({required this.count, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -2097,7 +2109,7 @@ class _MapCounter extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Text(
-              '$count',
+              '$count • $label',
               style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
             ),
           ],
