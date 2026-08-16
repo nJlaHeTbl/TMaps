@@ -37,10 +37,17 @@ void main() {
     test('latest community report overrides imported amenities', () {
       final place = {
         'has_paper': false,
-        'latest_report': {'has_paper': true, 'access_type': 'customers'},
+        'has_toilet': false,
+        'place_kind': 'cafe',
+        'latest_report': {
+          'has_paper': true,
+          'has_toilet': true,
+          'access_type': 'customers',
+        },
       };
 
       expect(PlaceInfo.effectiveValue(place, 'has_paper'), isTrue);
+      expect(PlaceInfo.hasToilet(place), isTrue);
       expect(PlaceInfo.accessLabel(place), 'Для клиентов');
     });
   });

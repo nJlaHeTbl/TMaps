@@ -12,28 +12,26 @@ class ToiletRepository {
   final SupabaseClient _client;
 
   Future<List<Map<String, dynamic>>> fetchAll() async {
-    final openStreetMapToilets = await _fetchOpenStreetMapToilets();
-    List<Map<String, dynamic>> communityToilets = const [];
-    List<Map<String, dynamic>> reports = const [];
-    List<Map<String, dynamic>> voteTotals = const [];
-
-    try {
-      communityToilets = await _fetchCommunityToilets();
-    } on Object {
-      communityToilets = const [];
+    Future<List<Map<String, dynamic>>> safe(
+      Future<List<Map<String, dynamic>>> request,
+    ) async {
+      try {
+        return await request;
+      } on Object {
+        return const [];
+      }
     }
 
-    try {
-      reports = await _fetchReports();
-    } on Object {
-      reports = const [];
-    }
-
-    try {
-      voteTotals = await _fetchVoteTotals();
-    } on Object {
-      voteTotals = const [];
-    }
+    final results = await Future.wait([
+      _fetchOpenStreetMapToilets(),
+      safe(_fetchCommunityToilets()),
+      safe(_fetchReports()),
+      safe(_fetchVoteTotals()),
+    ]);
+    final openStreetMapToilets = results[0];
+    final communityToilets = results[1];
+    final reports = results[2];
+    final voteTotals = results[3];
 
     return _attachCommunityData(
       [...communityToilets, ...openStreetMapToilets],
@@ -167,11 +165,43 @@ class ToiletRepository {
     };
   }
 
+  Future<int> submitPlace({
+    required double latitude,
+    required double longitude,
+    required String username,
+    required PlaceKind placeKind,
+    required bool isFree,
+    required int cleanliness,
+    required String condition,
+    String? comment,
+  }) async {
+    final usernameIssue = ContentGuard.validateUsername(username);
+    final commentIssue = ContentGuard.validateComment(comment);
+    if (usernameIssue != null) throw ArgumentError(usernameIssue);
+    if (commentIssue != null) throw ArgumentError(commentIssue);
+
+    final response = await _client.rpc(
+      'submit_place',
+      params: {
+        'p_lat': latitude,
+        'p_lng': longitude,
+        'p_username': username,
+        'p_place_kind': PlaceInfo.valueOfKind(placeKind),
+        'p_is_free': isFree,
+        'p_cleanliness': cleanliness,
+        'p_condition': condition,
+        'p_comment': comment,
+      },
+    );
+    return (response as num).toInt();
+  }
+
   Future<Map<String, dynamic>> addReport({
     required Map<String, dynamic> place,
     required String username,
     required int cleanliness,
     required String condition,
+    required bool? hasToilet,
     required bool? hasPaper,
     required bool? hasSoap,
     required bool? wheelchairAccessible,
@@ -194,6 +224,7 @@ class ToiletRepository {
           'username': username,
           'cleanliness': cleanliness,
           'condition': condition,
+          'has_toilet': hasToilet,
           'has_paper': hasPaper,
           'has_soap': hasSoap,
           'wheelchair_accessible': wheelchairAccessible,

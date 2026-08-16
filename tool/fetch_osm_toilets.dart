@@ -21,6 +21,7 @@ area["ISO3166-1"="KZ"][admin_level=2]->.kz;
   nwr["socket:device:USB-A"]["socket:device:USB-A"!~"^(no|0)\$"]["access"!~"^(private|no)\$"](area.kz);
   nwr["socket:device:USB-C"]["socket:device:USB-C"!~"^(no|0)\$"]["access"!~"^(private|no)\$"](area.kz);
   nwr["socket:device:Lightning"]["socket:device:Lightning"!~"^(no|0)\$"]["access"!~"^(private|no)\$"](area.kz);
+  nwr["amenity"~"^(cafe|restaurant|fast_food|food_court|pub|bar)\$"](44.80,78.10,45.25,78.65);
 );
 out center tags;
 ''';
@@ -109,7 +110,9 @@ Future<void> main() async {
         ? 'Зарядка телефона'
         : isDedicatedToilet
         ? 'Общественный туалет'
-        : _placeKindLabel(placeKind);
+        : hasToilet
+        ? _placeKindLabel(placeKind)
+        : 'Туалет пока не подтверждён';
 
     placesBySource[sourceId] = {
       'lat': latitude.toDouble(),

@@ -25,8 +25,9 @@ class PlaceInfo {
 
   static bool hasToilet(Map<String, dynamic> place) {
     final kind = kindOf(place);
-    return place['has_toilet'] == true ||
-        (place['has_toilet'] != false &&
+    final reportedValue = effectiveValue(place, 'has_toilet');
+    return reportedValue == true ||
+        (reportedValue != false &&
             kind != PlaceKind.phoneCharging &&
             kind != PlaceKind.evCharging);
   }
@@ -66,9 +67,9 @@ class PlaceInfo {
     if (name != null && name.isNotEmpty) return name;
 
     return switch (kindOf(place)) {
-      PlaceKind.cafe => 'Кафе с туалетом',
-      PlaceKind.fuel => 'АЗС с туалетом',
-      PlaceKind.organization => 'Организация с туалетом',
+      PlaceKind.cafe => 'Кафе или ресторан',
+      PlaceKind.fuel => 'Автозаправка',
+      PlaceKind.organization => 'Организация',
       PlaceKind.phoneCharging => 'Зарядка телефона',
       PlaceKind.evCharging => 'Зарядка электромобиля',
       _ => 'Туалет',

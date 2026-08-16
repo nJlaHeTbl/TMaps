@@ -1,19 +1,27 @@
 import 'package:flutter/material.dart';
 
+import 'app_palette.dart';
+
 abstract final class AppTheme {
-  static const green = Color(0xFF16A34A);
+  static const green = AppPalette.emerald;
 
   static ThemeData get light {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: green,
-      brightness: Brightness.light,
-      surface: const Color(0xFFFCFDFC),
-    );
+    final colorScheme =
+        ColorScheme.fromSeed(
+          seedColor: AppPalette.emerald,
+          brightness: Brightness.light,
+          surface: AppPalette.surface,
+        ).copyWith(
+          primary: AppPalette.emerald,
+          secondary: AppPalette.aqua,
+          tertiary: AppPalette.violet,
+          onPrimary: Colors.white,
+        );
 
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: const Color(0xFFF8FAF9),
+      scaffoldBackgroundColor: AppPalette.canvas,
       fontFamily: 'Roboto',
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
@@ -36,6 +44,14 @@ abstract final class AppTheme {
           ),
         ),
       ),
+      cardTheme: CardThemeData(
+        color: AppPalette.surface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+          side: const BorderSide(color: Color(0xFFE0EDE7)),
+        ),
+      ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: green,
@@ -45,6 +61,17 @@ abstract final class AppTheme {
             borderRadius: BorderRadius.circular(16),
           ),
           textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppPalette.ink,
+          minimumSize: const Size(0, 52),
+          side: const BorderSide(color: Color(0xFFCEE2D9)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(

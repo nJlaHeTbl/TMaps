@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'dart:math';
 
@@ -9,11 +10,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/app_config.dart';
+import 'core/app_palette.dart';
 import 'core/app_theme.dart';
 import 'core/content_guard.dart';
+import 'core/map_display_policy.dart';
 import 'core/place_info.dart';
 import 'data/toilet_repository.dart';
+import 'presentation/place_category_style.dart';
+import 'services/live_location_service.dart';
 import 'services/route_service.dart';
+import 'widgets/map_overlays.dart';
 
 bool? _nullableBool(dynamic value) {
   if (value is bool) return value;
@@ -21,42 +27,6 @@ bool? _nullableBool(dynamic value) {
     'yes' || 'true' || '1' => true,
     'no' || 'false' || '0' => false,
     _ => null,
-  };
-}
-
-String _categoryLabel(PlaceKind kind) {
-  return switch (kind) {
-    PlaceKind.publicToilet => 'Туалет',
-    PlaceKind.communityToilet => 'Сообщество',
-    PlaceKind.cafe => 'Кафе',
-    PlaceKind.fuel => 'АЗС',
-    PlaceKind.organization => 'Заведения',
-    PlaceKind.phoneCharging => 'Телефон',
-    PlaceKind.evCharging => 'Электро',
-  };
-}
-
-IconData _categoryIcon(PlaceKind kind) {
-  return switch (kind) {
-    PlaceKind.publicToilet => Icons.wc_rounded,
-    PlaceKind.communityToilet => Icons.groups_rounded,
-    PlaceKind.cafe => Icons.restaurant_rounded,
-    PlaceKind.fuel => Icons.local_gas_station_rounded,
-    PlaceKind.organization => Icons.apartment_rounded,
-    PlaceKind.phoneCharging => Icons.battery_charging_full_rounded,
-    PlaceKind.evCharging => Icons.ev_station_rounded,
-  };
-}
-
-Color _categoryColor(PlaceKind kind) {
-  return switch (kind) {
-    PlaceKind.publicToilet => const Color(0xFF16A34A),
-    PlaceKind.communityToilet => const Color(0xFFDB2777),
-    PlaceKind.cafe => const Color(0xFFEA580C),
-    PlaceKind.fuel => const Color(0xFF7C3AED),
-    PlaceKind.organization => const Color(0xFF0F766E),
-    PlaceKind.phoneCharging => const Color(0xFF2563EB),
-    PlaceKind.evCharging => const Color(0xFF0891B2),
   };
 }
 
@@ -102,10 +72,21 @@ class _HomePageState extends State<HomePage> {
 
   final MapController _mapController = MapController();
   final RouteService _routeService = const RouteService();
+  final LiveLocationService _locationService = LiveLocationService();
 
   late final ToiletRepository _toiletRepository;
+  StreamSubscription<Position>? _locationSubscription;
+  Timer? _cameraUpdateTimer;
 
   LatLng currentPosition = const LatLng(45.0156, 78.3731);
+  LatLng _pickedPosition = const LatLng(45.0156, 78.3731);
+  LatLngBounds? _visibleMapBounds;
+  LocationAccessState _locationState = LocationAccessState.permissionNeeded;
+  double _mapZoom = 15;
+  double _locationAccuracy = 0;
+  double _locationHeading = 0;
+  bool _followUser = false;
+  bool _isPickingLocation = false;
 
   final List<Map<String, dynamic>> toilets = [];
 
@@ -172,6 +153,17 @@ class _HomePageState extends State<HomePage> {
         .toList(growable: false);
   }
 
+  List<Map<String, dynamic>> get displayedPlaces =>
+      MapDisplayPolicy.placesInside(
+        visibleToilets,
+        zoom: _mapZoom,
+        bounds: _visibleMapBounds,
+        maxMarkers: MediaQuery.sizeOf(context).width < 600 ? 55 : 90,
+      );
+
+  bool get showZoomHint =>
+      !MapDisplayPolicy.canShowPlaces(_mapZoom) && !_isPickingLocation;
+
   bool get filtersActive =>
       selectedCategory != null ||
       showFreeOnly ||
@@ -187,9 +179,19 @@ class _HomePageState extends State<HomePage> {
 
     _toiletRepository = ToiletRepository(Supabase.instance.client);
 
+    _locationSubscription = _locationService.positions.listen(_applyPosition);
+
     loadUsername();
-    getLocation();
+    unawaited(_startLocation(requestPermission: false));
     loadToilets();
+  }
+
+  @override
+  void dispose() {
+    _cameraUpdateTimer?.cancel();
+    unawaited(_locationSubscription?.cancel());
+    unawaited(_locationService.dispose());
+    super.dispose();
   }
 
   // =========================================================
@@ -300,6 +302,9 @@ class _HomePageState extends State<HomePage> {
                       });
 
                       Navigator.of(context).pop();
+                      unawaited(
+                        _startLocation(requestPermission: true, center: true),
+                      );
                     },
                     child: const Text('Продолжить'),
                   ),
@@ -318,57 +323,64 @@ class _HomePageState extends State<HomePage> {
   // GPS
   // =========================================================
 
-  Future<bool> getLocation() async {
-    try {
-      final enabled = await Geolocator.isLocationServiceEnabled();
+  Future<bool> _startLocation({
+    required bool requestPermission,
+    bool center = false,
+  }) async {
+    final result = await _locationService.start(
+      requestPermission: requestPermission,
+    );
+    if (!mounted) return false;
 
-      if (!enabled) {
-        return false;
-      }
+    setState(() => _locationState = result.state);
+    if (result.position != null) {
+      _applyPosition(result.position!, center: center);
+    }
+    return result.state == LocationAccessState.ready && result.position != null;
+  }
 
-      LocationPermission permission = await Geolocator.checkPermission();
+  void _applyPosition(Position position, {bool center = false}) {
+    if (!mounted) return;
+    final point = LatLng(position.latitude, position.longitude);
 
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
+    setState(() {
+      currentPosition = point;
+      _locationAccuracy = position.accuracy;
+      _locationHeading = position.heading.isFinite ? position.heading : 0;
+      _locationState = LocationAccessState.ready;
+      if (routePoints.length >= 2) routePoints[0] = point;
+    });
 
-      if (permission == LocationPermission.deniedForever) {
-        return false;
-      }
-
-      if (permission == LocationPermission.denied) {
-        return false;
-      }
-
-      final Position position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-        ),
-      );
-
-      final newPosition = LatLng(position.latitude, position.longitude);
-
-      if (!mounted) return false;
-
-      setState(() {
-        currentPosition = newPosition;
-      });
-
-      _mapController.move(currentPosition, 16);
-      return true;
-    } catch (e) {
-      debugPrint('Ошибка GPS: $e');
-      return false;
+    if (center || _followUser) {
+      _mapController.move(point, max(_mapZoom, 16));
     }
   }
 
   Future<void> centerOnUser() async {
-    final locationFound = await getLocation();
+    setState(() => _followUser = true);
+    final locationFound = await _startLocation(
+      requestPermission: true,
+      center: true,
+    );
+    if (!mounted || locationFound) return;
 
-    if (!mounted || !locationFound) return;
-
-    _mapController.move(currentPosition, 17);
+    setState(() => _followUser = false);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(_locationHelpMessage)));
   }
+
+  String get _locationHelpMessage => switch (_locationState) {
+    LocationAccessState.permissionNeeded =>
+      'Нажми «Включить GPS» и разреши доступ к геопозиции',
+    LocationAccessState.deniedForever =>
+      'Разреши геопозицию для TMaps в настройках телефона',
+    LocationAccessState.servicesDisabled =>
+      'Включи GPS на телефоне и повтори попытку',
+    LocationAccessState.unavailable =>
+      'Не удалось получить координаты. Проверь GPS и интернет',
+    LocationAccessState.ready => 'Геопозиция работает',
+  };
 
   Future<void> showNearestToilet() async {
     if (isFindingNearest) return;
@@ -386,7 +398,7 @@ class _HomePageState extends State<HomePage> {
         throw Exception('На карте пока нет туалетов');
       }
 
-      final locationFound = await getLocation();
+      final locationFound = await _startLocation(requestPermission: true);
       if (!locationFound) {
         throw Exception('Не удалось определить местоположение');
       }
@@ -488,9 +500,9 @@ class _HomePageState extends State<HomePage> {
                         ),
                         ...PlaceKind.values.map(
                           (kind) => _FilterCategoryChip(
-                            label: _categoryLabel(kind),
-                            icon: _categoryIcon(kind),
-                            color: _categoryColor(kind),
+                            label: kind.shortLabel,
+                            icon: kind.icon,
+                            color: kind.color,
                             selected: category == kind,
                             onSelected: () {
                               setSheetState(() => category = kind);
@@ -678,35 +690,67 @@ class _HomePageState extends State<HomePage> {
   // =========================================================
 
   Future<void> addToilet() async {
-    if (isAddingToilet) {
-      return;
-    }
+    if (isAddingToilet) return;
 
     if (ContentGuard.validateUsername(username) != null) {
       await showUsernameDialog();
-
-      if (ContentGuard.validateUsername(username) != null) {
-        return;
-      }
+      if (!mounted || ContentGuard.validateUsername(username) != null) return;
     }
 
-    try {
-      setState(() {
-        isAddingToilet = true;
-      });
+    final mode = await showModalBottomSheet<AddLocationMode>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => const AddLocationChoiceSheet(),
+    );
+    if (!mounted || mode == null) return;
 
-      final locationFound = await getLocation();
-      if (!locationFound) {
-        throw Exception('Не удалось определить местоположение');
-      }
-
+    if (mode == AddLocationMode.current) {
+      setState(() => isAddingToilet = true);
+      final locationFound = await _startLocation(
+        requestPermission: true,
+        center: true,
+      );
       if (!mounted) return;
+      if (!locationFound) {
+        setState(() => isAddingToilet = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_locationHelpMessage)));
+        return;
+      }
+      await _showAddPlaceForm(currentPosition);
+      return;
+    }
 
-      bool isFree = true;
-      int cleanliness = 5;
-      String condition = 'Хорошее';
-      String comment = '';
-      PlaceKind placeKind = PlaceKind.communityToilet;
+    final camera = _mapController.camera;
+    setState(() {
+      _followUser = false;
+      _isPickingLocation = true;
+      _pickedPosition = camera.center;
+    });
+  }
+
+  void _cancelLocationPicker() {
+    setState(() => _isPickingLocation = false);
+  }
+
+  Future<void> _confirmPickedLocation() async {
+    final position = _pickedPosition;
+    setState(() {
+      _isPickingLocation = false;
+      isAddingToilet = true;
+    });
+    await _showAddPlaceForm(position);
+  }
+
+  Future<void> _showAddPlaceForm(LatLng position) async {
+    try {
+      var isFree = true;
+      var cleanliness = 5;
+      var condition = 'Хорошее';
+      var comment = '';
+      var placeKind = PlaceKind.communityToilet;
 
       final result = await showModalBottomSheet<bool>(
         context: context,
@@ -716,6 +760,7 @@ class _HomePageState extends State<HomePage> {
           return StatefulBuilder(
             builder: (context, setDialogState) {
               return _AddToiletSheet(
+                position: position,
                 placeKind: placeKind,
                 isFree: isFree,
                 cleanliness: cleanliness,
@@ -766,19 +811,11 @@ class _HomePageState extends State<HomePage> {
         },
       );
 
-      if (result != true) {
-        if (!mounted) return;
+      if (result != true || !mounted) return;
 
-        setState(() {
-          isAddingToilet = false;
-        });
-
-        return;
-      }
-
-      final insertedToilet = await _toiletRepository.add(
-        latitude: currentPosition.latitude,
-        longitude: currentPosition.longitude,
+      final submissionId = await _toiletRepository.submitPlace(
+        latitude: position.latitude,
+        longitude: position.longitude,
         username: username!,
         placeKind: placeKind,
         isFree: isFree,
@@ -789,12 +826,6 @@ class _HomePageState extends State<HomePage> {
 
       if (!mounted) return;
 
-      setState(() {
-        toilets.add(insertedToilet);
-
-        isAddingToilet = false;
-      });
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           behavior: SnackBarBehavior.floating,
@@ -802,17 +833,16 @@ class _HomePageState extends State<HomePage> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          content: Text('Место добавлено от имени $username'),
+          content: Text(
+            'Заявка #$submissionId отправлена. '
+            'Место появится после проверки.',
+          ),
         ),
       );
     } catch (e) {
       debugPrint('Ошибка добавления туалета: $e');
 
       if (!mounted) return;
-
-      setState(() {
-        isAddingToilet = false;
-      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -822,9 +852,11 @@ class _HomePageState extends State<HomePage> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          content: Text('❌ Ошибка: $e'),
+          content: Text('Не удалось отправить заявку: $e'),
         ),
       );
+    } finally {
+      if (mounted) setState(() => isAddingToilet = false);
     }
   }
 
@@ -951,7 +983,10 @@ class _HomePageState extends State<HomePage> {
       builder: (context) {
         return _PlaceReportSheet(
           title: PlaceInfo.titleOf(place),
-          hasToilet: PlaceInfo.hasToilet(place),
+          canConfirmToilet: PlaceInfo.isVenue(place),
+          initialHasToilet: _nullableBool(
+            PlaceInfo.effectiveValue(place, 'has_toilet'),
+          ),
           initialCleanliness:
               (PlaceInfo.effectiveValue(place, 'cleanliness') as num?)?.toInt(),
           initialCondition: PlaceInfo.effectiveValue(
@@ -989,6 +1024,7 @@ class _HomePageState extends State<HomePage> {
         username: username!,
         cleanliness: draft.cleanliness,
         condition: draft.condition,
+        hasToilet: draft.hasToilet,
         hasPaper: draft.hasPaper,
         hasSoap: draft.hasSoap,
         wheelchairAccessible: draft.wheelchairAccessible,
@@ -1083,7 +1119,7 @@ class _HomePageState extends State<HomePage> {
         routeDuration = null;
       });
 
-      final locationFound = await getLocation();
+      final locationFound = await _startLocation(requestPermission: true);
       if (!locationFound) {
         throw Exception('Не удалось определить местоположение');
       }
@@ -1193,6 +1229,40 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  void _syncMapCamera() {
+    final camera = _mapController.camera;
+    if (!mounted) return;
+    setState(() {
+      _mapZoom = camera.zoom;
+      _visibleMapBounds = camera.visibleBounds;
+      if (_isPickingLocation) _pickedPosition = camera.center;
+    });
+  }
+
+  void _handleMapPositionChanged(MapCamera camera, bool hasGesture) {
+    if (hasGesture && _followUser) {
+      _followUser = false;
+    }
+
+    if (_isPickingLocation) {
+      setState(() {
+        _mapZoom = camera.zoom;
+        _visibleMapBounds = camera.visibleBounds;
+        _pickedPosition = camera.center;
+      });
+      return;
+    }
+
+    _cameraUpdateTimer?.cancel();
+    _cameraUpdateTimer = Timer(const Duration(milliseconds: 120), () {
+      if (!mounted) return;
+      setState(() {
+        _mapZoom = camera.zoom;
+        _visibleMapBounds = camera.visibleBounds;
+      });
+    });
+  }
+
   // =========================================================
   // UI
   // =========================================================
@@ -1212,13 +1282,20 @@ class _HomePageState extends State<HomePage> {
             options: MapOptions(
               initialCenter: currentPosition,
               initialZoom: 15,
-              minZoom: 4,
+              minZoom: 5.4,
               maxZoom: 19,
+              cameraConstraint: CameraConstraint.containCenter(
+                bounds: MapDisplayPolicy.kazakhstanBounds,
+              ),
+              onMapReady: _syncMapCamera,
+              onPositionChanged: _handleMapPositionChanged,
             ),
             children: [
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.tmaps.app',
+                keepBuffer: 1,
+                panBuffer: 0,
               ),
               const RichAttributionWidget(
                 attributions: [
@@ -1245,171 +1322,190 @@ class _HomePageState extends State<HomePage> {
               // =================================================
               // ТУАЛЕТЫ
               // =================================================
-              MarkerLayer(
-                markers: visibleToilets.map((toilet) {
-                  final double lat = (toilet['lat'] as num).toDouble();
+              if (!_isPickingLocation)
+                MarkerLayer(
+                  markers: displayedPlaces.map((toilet) {
+                    final double lat = (toilet['lat'] as num).toDouble();
 
-                  final double lng = (toilet['lng'] as num).toDouble();
+                    final double lng = (toilet['lng'] as num).toDouble();
 
-                  final bool isFree = toilet['is_free'] == true;
-                  final bool feeKnown = toilet['fee_known'] != false;
-                  final placeKind = PlaceInfo.kindOf(toilet);
+                    final bool isFree = toilet['is_free'] == true;
+                    final bool feeKnown = toilet['fee_known'] != false;
+                    final placeKind = PlaceInfo.kindOf(toilet);
 
-                  return Marker(
-                    point: LatLng(lat, lng),
-                    width: 58,
-                    height: 68,
-                    child: Semantics(
-                      button: true,
-                      label:
-                          '${PlaceInfo.kindLabel(toilet)}: ${PlaceInfo.titleOf(toilet)}',
-                      child: GestureDetector(
-                        onTap: () {
-                          showToiletInfo(toilet);
-                        },
-                        child: _PlaceMarker(
-                          isFree: isFree,
-                          feeKnown: feeKnown,
-                          placeKind: placeKind,
+                    return Marker(
+                      point: LatLng(lat, lng),
+                      width: 58,
+                      height: 68,
+                      child: Semantics(
+                        button: true,
+                        label:
+                            '${PlaceInfo.kindLabel(toilet)}: ${PlaceInfo.titleOf(toilet)}',
+                        child: GestureDetector(
+                          onTap: () {
+                            showToiletInfo(toilet);
+                          },
+                          child: _PlaceMarker(
+                            isFree: isFree,
+                            feeKnown: feeKnown,
+                            placeKind: placeKind,
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                }).toList(),
-              ),
+                    );
+                  }).toList(),
+                ),
 
               // =================================================
               // ТЕКУЩЕЕ МЕСТОПОЛОЖЕНИЕ
               // =================================================
-              MarkerLayer(
-                markers: [
-                  Marker(
-                    point: currentPosition,
-                    width: 44,
-                    height: 44,
-                    child: const _UserLocationMarker(),
-                  ),
-                ],
-              ),
+              if (_locationState == LocationAccessState.ready)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: currentPosition,
+                      width: 58,
+                      height: 58,
+                      child: _UserLocationMarker(
+                        heading: _locationHeading,
+                        accuracy: _locationAccuracy,
+                      ),
+                    ),
+                  ],
+                ),
             ],
           ),
 
           // ===================================================
           // ВЕРХНЯЯ ПАНЕЛЬ
           // ===================================================
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                child: _GlassHeader(
-                  username: username,
-                  toiletCount: visibleToilets.length,
-                  onInstall: showInstallInstructions,
+          if (!_isPickingLocation)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                  child: _GlassHeader(
+                    username: username,
+                    toiletCount: visibleToilets.length,
+                    onInstall: showInstallInstructions,
+                  ),
                 ),
               ),
             ),
-          ),
 
           // ===================================================
           // ЛЕГЕНДА КАТЕГОРИЙ
           // ===================================================
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 88, 14, 0),
-                child: _MapLegendBar(
-                  selectedKind: selectedCategory,
-                  onSelected: (kind) {
-                    setState(() => selectedCategory = kind);
-                  },
+          if (!_isPickingLocation)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 88, 14, 0),
+                  child: _MapLegendBar(
+                    selectedKind: selectedCategory,
+                    onSelected: (kind) {
+                      setState(() => selectedCategory = kind);
+                    },
+                  ),
                 ),
               ),
             ),
-          ),
 
           // ===================================================
           // КНОПКИ СПРАВА
           // ===================================================
-          Positioned(
-            right: 16,
-            bottom: routePoints.length >= 2 ? 150 : 28,
-            child: SafeArea(
-              child: Column(
-                children: [
-                  _MapActionButton(
-                    icon: Icons.my_location_rounded,
-                    onPressed: centerOnUser,
-                    tooltip: 'Моё местоположение',
-                  ),
-                  const SizedBox(height: 12),
-                  _MapActionButton(
-                    icon: Icons.filter_alt_rounded,
-                    onPressed: showFilters,
-                    tooltip: 'Фильтры',
-                    backgroundColor: filtersActive
-                        ? const Color(0xFFDCFCE7)
-                        : Colors.white,
-                    foregroundColor: filtersActive
-                        ? green
-                        : const Color(0xFF1F2937),
-                  ),
-                  const SizedBox(height: 12),
-                  _MapActionButton(
-                    icon: Icons.near_me_rounded,
-                    onPressed: isFindingNearest ? null : showNearestToilet,
-                    tooltip: 'Ближайший туалет',
-                    child: isFindingNearest
-                        ? const SizedBox(
-                            width: 21,
-                            height: 21,
-                            child: CircularProgressIndicator(strokeWidth: 2.4),
-                          )
-                        : null,
-                  ),
-                  const SizedBox(height: 12),
-                  _MapActionButton(
-                    icon: Icons.add_rounded,
-                    backgroundColor: green,
-                    foregroundColor: Colors.white,
-                    size: 62,
-                    onPressed: isAddingToilet ? null : addToilet,
-                    tooltip: 'Добавить место',
-                    child: isAddingToilet
-                        ? const SizedBox(
-                            width: 23,
-                            height: 23,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: Colors.white,
-                            ),
-                          )
-                        : null,
-                  ),
-                ],
+          if (!_isPickingLocation)
+            Positioned(
+              right: 16,
+              bottom: routePoints.length >= 2 ? 150 : 28,
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    _MapActionButton(
+                      icon: Icons.my_location_rounded,
+                      onPressed: centerOnUser,
+                      tooltip: 'Моё местоположение',
+                      backgroundColor: _followUser
+                          ? AppPalette.sky
+                          : Colors.white,
+                      foregroundColor: _followUser
+                          ? Colors.white
+                          : AppPalette.ink,
+                    ),
+                    const SizedBox(height: 12),
+                    _MapActionButton(
+                      icon: Icons.filter_alt_rounded,
+                      onPressed: showFilters,
+                      tooltip: 'Фильтры',
+                      backgroundColor: filtersActive
+                          ? const Color(0xFFDCFCE7)
+                          : Colors.white,
+                      foregroundColor: filtersActive
+                          ? green
+                          : const Color(0xFF1F2937),
+                    ),
+                    const SizedBox(height: 12),
+                    _MapActionButton(
+                      icon: Icons.near_me_rounded,
+                      onPressed: isFindingNearest ? null : showNearestToilet,
+                      tooltip: 'Ближайший туалет',
+                      child: isFindingNearest
+                          ? const SizedBox(
+                              width: 21,
+                              height: 21,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                              ),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    _MapActionButton(
+                      icon: Icons.add_rounded,
+                      backgroundColor: green,
+                      foregroundColor: Colors.white,
+                      size: 62,
+                      onPressed: isAddingToilet ? null : addToilet,
+                      tooltip: 'Добавить место',
+                      child: isAddingToilet
+                          ? const SizedBox(
+                              width: 23,
+                              height: 23,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Colors.white,
+                              ),
+                            )
+                          : null,
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
 
           // ===================================================
           // СЧЕТЧИК ТУАЛЕТОВ
           // ===================================================
-          if (visibleToilets.isNotEmpty)
+          if (!_isPickingLocation && displayedPlaces.isNotEmpty)
             Positioned(
               left: 16,
               bottom: routePoints.length >= 2 ? 150 : 28,
-              child: SafeArea(child: _MapCounter(count: visibleToilets.length)),
+              child: SafeArea(
+                child: _MapCounter(count: displayedPlaces.length),
+              ),
             ),
 
           // ===================================================
           // ПАНЕЛЬ МАРШРУТА
           // ===================================================
-          if (routePoints.length >= 2 &&
+          if (!_isPickingLocation &&
+              routePoints.length >= 2 &&
               routeDistance != null &&
               routeDuration != null)
             Positioned(
@@ -1423,6 +1519,35 @@ class _HomePageState extends State<HomePage> {
                   onClose: clearRoute,
                 ),
               ),
+            ),
+
+          if (showZoomHint)
+            const Positioned(
+              left: 16,
+              bottom: 28,
+              child: SafeArea(child: MapZoomHint()),
+            ),
+
+          if (!_isPickingLocation &&
+              _locationState != LocationAccessState.ready)
+            Positioned(
+              left: 16,
+              right: 90,
+              bottom: 92,
+              child: SafeArea(
+                child: LocationPromptCard(
+                  title: 'GPS не включён',
+                  message: _locationHelpMessage,
+                  onEnable: centerOnUser,
+                ),
+              ),
+            ),
+
+          if (_isPickingLocation)
+            PlacePickerOverlay(
+              position: _pickedPosition,
+              onCancel: _cancelLocationPicker,
+              onConfirm: _confirmPickedLocation,
             ),
         ],
       ),
@@ -1457,8 +1582,11 @@ class _GlassHeader extends StatelessWidget {
             gradient: LinearGradient(
               colors: [
                 Colors.white.withValues(alpha: 0.96),
-                const Color(0xFFF0FDF4).withValues(alpha: 0.92),
+                AppPalette.mint.withValues(alpha: 0.18),
+                AppPalette.aqua.withValues(alpha: 0.10),
               ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(26),
             border: Border.all(color: Colors.white, width: 1.4),
@@ -1476,11 +1604,7 @@ class _GlassHeader extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF34D399), Color(0xFF15803D)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  gradient: AppPalette.brandGradient,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
@@ -1605,9 +1729,9 @@ class _MapLegendBar extends StatelessWidget {
                 ),
                 ...PlaceKind.values.map(
                   (kind) => _LegendItem(
-                    color: _categoryColor(kind),
-                    icon: _categoryIcon(kind),
-                    label: _categoryLabel(kind),
+                    color: kind.color,
+                    icon: kind.icon,
+                    label: kind.shortLabel,
                     selected: selectedKind == kind,
                     onTap: () => onSelected(kind),
                   ),
@@ -1851,32 +1975,46 @@ class _MarkerTrianglePainter extends CustomPainter {
 // =============================================================
 
 class _UserLocationMarker extends StatelessWidget {
-  const _UserLocationMarker();
+  const _UserLocationMarker({required this.heading, required this.accuracy});
+
+  final double heading;
+  final double accuracy;
 
   @override
   Widget build(BuildContext context) {
+    final isMovingDirectionKnown = heading > 0 && heading <= 360;
+    final haloOpacity = accuracy > 60 ? 0.11 : 0.19;
+
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF2563EB).withValues(alpha: 0.16),
+        color: AppPalette.sky.withValues(alpha: haloOpacity),
         shape: BoxShape.circle,
       ),
-      padding: const EdgeInsets.all(8),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.18),
-              blurRadius: 5,
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(9),
+      child: Transform.rotate(
+        angle: isMovingDirectionKnown ? heading * pi / 180 : 0,
         child: Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFF2563EB),
+          decoration: BoxDecoration(
+            color: Colors.white,
             shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 6,
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(4),
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              color: AppPalette.sky,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isMovingDirectionKnown ? Icons.navigation_rounded : Icons.circle,
+              color: Colors.white,
+              size: isMovingDirectionKnown ? 22 : 13,
+            ),
           ),
         ),
       ),
@@ -2125,13 +2263,14 @@ class _ToiletInfoSheet extends StatelessWidget {
         feeKnown: feeKnown,
         isFree: isFree,
       ),
-      PlaceKind.phoneCharging => const Color(0xFF2563EB),
-      PlaceKind.evCharging => const Color(0xFF0891B2),
-      PlaceKind.cafe => const Color(0xFFEA580C),
-      PlaceKind.fuel => const Color(0xFF7C3AED),
-      PlaceKind.organization => const Color(0xFF0F766E),
+      _ => placeKind.color,
     };
   }
+
+  bool get isVenue =>
+      placeKind == PlaceKind.cafe ||
+      placeKind == PlaceKind.fuel ||
+      placeKind == PlaceKind.organization;
 
   Color get conditionColor {
     if (condition == 'Хорошее') {
@@ -2258,8 +2397,14 @@ class _ToiletInfoSheet extends StatelessWidget {
                             : isFree
                             ? const Color(0xFF16A34A)
                             : Colors.orange.shade700,
-                        title: hasToilet ? 'Стоимость' : 'Зарядка',
-                        value: !feeKnown
+                        title: hasToilet
+                            ? 'Стоимость'
+                            : isVenue
+                            ? 'Туалет'
+                            : 'Зарядка',
+                        value: !hasToilet && isVenue
+                            ? 'Не подтверждён'
+                            : !feeKnown
                             ? 'Не указано'
                             : isFree
                             ? 'Бесплатно'
@@ -2322,6 +2467,12 @@ class _ToiletInfoSheet extends StatelessWidget {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
+                    if (!hasToilet && isVenue)
+                      const _AmenityStatusChip(
+                        icon: Icons.wc_rounded,
+                        label: 'Туалет',
+                        value: null,
+                      ),
                     if (hasToilet)
                       _AmenityStatusChip(
                         icon: Icons.receipt_long_rounded,
@@ -2643,6 +2794,7 @@ class _InstallStep extends StatelessWidget {
 class _PlaceReportDraft {
   final int cleanliness;
   final String condition;
+  final bool? hasToilet;
   final bool? hasPaper;
   final bool? hasSoap;
   final bool? wheelchairAccessible;
@@ -2653,6 +2805,7 @@ class _PlaceReportDraft {
   const _PlaceReportDraft({
     required this.cleanliness,
     required this.condition,
+    required this.hasToilet,
     required this.hasPaper,
     required this.hasSoap,
     required this.wheelchairAccessible,
@@ -2664,7 +2817,8 @@ class _PlaceReportDraft {
 
 class _PlaceReportSheet extends StatefulWidget {
   final String title;
-  final bool hasToilet;
+  final bool canConfirmToilet;
+  final bool? initialHasToilet;
   final int? initialCleanliness;
   final String? initialCondition;
   final bool? initialPaper;
@@ -2675,7 +2829,8 @@ class _PlaceReportSheet extends StatefulWidget {
 
   const _PlaceReportSheet({
     required this.title,
-    required this.hasToilet,
+    required this.canConfirmToilet,
+    required this.initialHasToilet,
     required this.initialCleanliness,
     required this.initialCondition,
     required this.initialPaper,
@@ -2692,6 +2847,7 @@ class _PlaceReportSheet extends StatefulWidget {
 class _PlaceReportSheetState extends State<_PlaceReportSheet> {
   late int cleanliness;
   late String condition;
+  late bool? hasToilet;
   late bool? hasPaper;
   late bool? hasSoap;
   late bool? wheelchairAccessible;
@@ -2720,6 +2876,7 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
     condition = conditions.contains(widget.initialCondition)
         ? widget.initialCondition!
         : 'Среднее';
+    hasToilet = widget.initialHasToilet;
     hasPaper = widget.initialPaper;
     hasSoap = widget.initialSoap;
     wheelchairAccessible = widget.initialWheelchair;
@@ -2748,6 +2905,7 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
       _PlaceReportDraft(
         cleanliness: cleanliness,
         condition: condition,
+        hasToilet: hasToilet,
         hasPaper: hasPaper,
         hasSoap: hasSoap,
         wheelchairAccessible: wheelchairAccessible,
@@ -2864,7 +3022,16 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
                   },
                 ),
                 const SizedBox(height: 16),
-                if (widget.hasToilet) ...[
+                if (widget.canConfirmToilet) ...[
+                  _TriStateField(
+                    label: 'Есть туалет',
+                    icon: Icons.wc_rounded,
+                    value: hasToilet,
+                    onChanged: (value) => setState(() => hasToilet = value),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                if (hasToilet == true) ...[
                   _TriStateField(
                     label: 'Туалетная бумага',
                     icon: Icons.receipt_long_outlined,
@@ -2970,6 +3137,7 @@ class _TriStateField extends StatelessWidget {
 // =============================================================
 
 class _AddToiletSheet extends StatelessWidget {
+  final LatLng position;
   final PlaceKind placeKind;
   final bool isFree;
   final int cleanliness;
@@ -2986,6 +3154,7 @@ class _AddToiletSheet extends StatelessWidget {
   final VoidCallback onAdd;
 
   const _AddToiletSheet({
+    required this.position,
     required this.placeKind,
     required this.isFree,
     required this.cleanliness,
@@ -3059,7 +3228,7 @@ class _AddToiletSheet extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Добавить место',
+                          'Отправить место',
                           style: const TextStyle(
                             fontSize: 23,
                             fontWeight: FontWeight.w900,
@@ -3067,7 +3236,9 @@ class _AddToiletSheet extends StatelessWidget {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          placeTitle,
+                          '$placeTitle • '
+                          '${position.latitude.toStringAsFixed(5)}, '
+                          '${position.longitude.toStringAsFixed(5)}',
                           style: const TextStyle(color: Colors.grey),
                         ),
                       ],
@@ -3176,6 +3347,35 @@ class _AddToiletSheet extends StatelessWidget {
 
               const SizedBox(height: 8),
 
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  color: AppPalette.emerald.withValues(alpha: 0.09),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(
+                      Icons.verified_user_outlined,
+                      color: AppPalette.emerald,
+                    ),
+                    SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        'Точка появится на карте после быстрой проверки.',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
               Row(
                 children: List.generate(5, (index) {
                   final star = index + 1;
@@ -3276,8 +3476,8 @@ class _AddToiletSheet extends StatelessWidget {
                     flex: 2,
                     child: FilledButton.icon(
                       onPressed: onAdd,
-                      icon: const Icon(Icons.add_location_alt_rounded),
-                      label: const Text('Добавить место'),
+                      icon: const Icon(Icons.send_rounded),
+                      label: const Text('Отправить на проверку'),
                     ),
                   ),
                 ],
