@@ -11,10 +11,24 @@ class PlaceSearchSheet extends StatefulWidget {
     super.key,
     required this.places,
     required this.origin,
+    this.title = 'Найти место',
+    this.subtitle,
+    this.headerIcon = Icons.travel_explore_rounded,
+    this.autofocus = true,
+    this.sectionLabel = 'Ближайшие к центру карты',
+    this.emptyTitle = 'Ничего не нашли',
+    this.emptyMessage = 'Попробуй другое название или смени категорию',
   });
 
   final List<Map<String, dynamic>> places;
   final LatLng origin;
+  final String title;
+  final String? subtitle;
+  final IconData headerIcon;
+  final bool autofocus;
+  final String sectionLabel;
+  final String emptyTitle;
+  final String emptyMessage;
 
   @override
   State<PlaceSearchSheet> createState() => _PlaceSearchSheetState();
@@ -65,26 +79,24 @@ class _PlaceSearchSheetState extends State<PlaceSearchSheet> {
                         gradient: AppPalette.brandGradient,
                         borderRadius: BorderRadius.circular(15),
                       ),
-                      child: const Icon(
-                        Icons.travel_explore_rounded,
-                        color: Colors.white,
-                      ),
+                      child: Icon(widget.headerIcon, color: Colors.white),
                     ),
                     const SizedBox(width: 11),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Найти место',
-                            style: TextStyle(
+                          Text(
+                            widget.title,
+                            style: const TextStyle(
                               fontWeight: FontWeight.w900,
                               fontSize: 19,
                               letterSpacing: -0.3,
                             ),
                           ),
                           Text(
-                            '${widget.places.length} точки по Казахстану',
+                            widget.subtitle ??
+                                '${widget.places.length} точки по Казахстану',
                             style: const TextStyle(
                               color: AppPalette.muted,
                               fontSize: 11.5,
@@ -105,7 +117,7 @@ class _PlaceSearchSheetState extends State<PlaceSearchSheet> {
                 padding: const EdgeInsets.symmetric(horizontal: 18),
                 child: TextField(
                   controller: _controller,
-                  autofocus: true,
+                  autofocus: widget.autofocus,
                   textInputAction: TextInputAction.search,
                   onChanged: (value) => setState(() => _query = value),
                   decoration: InputDecoration(
@@ -170,7 +182,7 @@ class _PlaceSearchSheetState extends State<PlaceSearchSheet> {
                     const SizedBox(width: 6),
                     Text(
                       _query.trim().isEmpty
-                          ? 'Ближайшие к центру карты'
+                          ? widget.sectionLabel
                           : 'Показано: ${results.length}',
                       style: const TextStyle(
                         color: AppPalette.muted,
@@ -185,7 +197,10 @@ class _PlaceSearchSheetState extends State<PlaceSearchSheet> {
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 180),
                   child: results.isEmpty
-                      ? const _EmptySearchResult()
+                      ? _EmptySearchResult(
+                          title: widget.emptyTitle,
+                          message: widget.emptyMessage,
+                        )
                       : ListView.separated(
                           key: ValueKey('${_category?.name}:$_query'),
                           keyboardDismissBehavior:
@@ -386,7 +401,10 @@ class _MiniBadge extends StatelessWidget {
 }
 
 class _EmptySearchResult extends StatelessWidget {
-  const _EmptySearchResult();
+  const _EmptySearchResult({required this.title, required this.message});
+
+  final String title;
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -411,15 +429,15 @@ class _EmptySearchResult extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Ничего не нашли',
-              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
             ),
             const SizedBox(height: 5),
-            const Text(
-              'Попробуй другое название или смени категорию',
+            Text(
+              message,
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppPalette.muted, fontSize: 12),
+              style: const TextStyle(color: AppPalette.muted, fontSize: 12),
             ),
           ],
         ),

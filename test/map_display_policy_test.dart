@@ -41,11 +41,21 @@ void main() {
 
     final visible = MapDisplayPolicy.placesInside(
       manyPlaces,
-      zoom: 8,
+      zoom: 11.4,
       bounds: LatLngBounds(const LatLng(43, 76), const LatLng(46, 80)),
     );
 
-    expect(visible, hasLength(12));
+    expect(visible, hasLength(8));
+  });
+
+  test('на масштабе области ещё не показывает отдельные метки', () {
+    final visible = MapDisplayPolicy.placesInside(
+      places,
+      zoom: 9.8,
+      bounds: LatLngBounds(const LatLng(43, 76), const LatLng(47, 82)),
+    );
+
+    expect(visible, isEmpty);
   });
 
   test('распределяет метки по всей видимой области', () {
@@ -62,11 +72,11 @@ void main() {
 
     final visible = MapDisplayPolicy.placesInside(
       clusteredPlaces,
-      zoom: 8,
+      zoom: 11.4,
       bounds: LatLngBounds(const LatLng(44.9, 77.9), const LatLng(46, 79)),
     );
 
-    expect(visible, hasLength(12));
+    expect(visible, hasLength(8));
     expect(visible.any((place) => place['name'] == 'Север'), isTrue);
   });
 }

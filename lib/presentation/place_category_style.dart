@@ -5,13 +5,13 @@ import '../core/place_info.dart';
 
 extension PlaceKindStyle on PlaceKind {
   String get shortLabel => switch (this) {
-    PlaceKind.publicToilet => 'Обществ.',
-    PlaceKind.communityToilet => 'От людей',
-    PlaceKind.cafe => 'Еда',
+    PlaceKind.publicToilet => 'Общественные туалеты',
+    PlaceKind.communityToilet => 'Добавленные туалеты',
+    PlaceKind.cafe => 'Кафе и еда',
     PlaceKind.fuel => 'АЗС',
-    PlaceKind.organization => 'Места',
-    PlaceKind.phoneCharging => 'Телефон',
-    PlaceKind.evCharging => 'Электро',
+    PlaceKind.organization => 'Заведения',
+    PlaceKind.phoneCharging => 'Зарядить телефон',
+    PlaceKind.evCharging => 'Зарядка электромобилей',
   };
 
   IconData get icon => switch (this) {

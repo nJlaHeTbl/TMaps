@@ -69,7 +69,7 @@ class PlaceInfo {
     return switch (kindOf(place)) {
       PlaceKind.cafe => 'Кафе или ресторан',
       PlaceKind.fuel => 'Автозаправка',
-      PlaceKind.organization => 'Организация',
+      PlaceKind.organization => 'Заведение или организация',
       PlaceKind.phoneCharging => 'Зарядка телефона',
       PlaceKind.evCharging => 'Зарядка электромобиля',
       _ => 'Туалет',
@@ -83,7 +83,7 @@ class PlaceInfo {
       PlaceKind.organization => 'Организация',
       PlaceKind.phoneCharging => 'Зарядка мобильных устройств',
       PlaceKind.evCharging => 'Электрозарядная станция',
-      PlaceKind.communityToilet => 'Точка сообщества TMaps',
+      PlaceKind.communityToilet => 'Добавлено пользователем TMaps',
       PlaceKind.publicToilet => 'Общественный туалет',
     };
   }

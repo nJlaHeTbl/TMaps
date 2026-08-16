@@ -14,10 +14,12 @@ import 'core/app_palette.dart';
 import 'core/app_theme.dart';
 import 'core/content_guard.dart';
 import 'core/map_display_policy.dart';
+import 'core/map_marker_clustering.dart';
 import 'core/place_info.dart';
 import 'core/place_visibility_policy.dart';
 import 'data/toilet_repository.dart';
 import 'presentation/place_category_style.dart';
+import 'services/favorites_service.dart';
 import 'services/live_location_service.dart';
 import 'services/route_service.dart';
 import 'widgets/map_overlays.dart';
@@ -77,6 +79,7 @@ class _HomePageState extends State<HomePage> {
 
   final MapController _mapController = MapController();
   final RouteService _routeService = const RouteService();
+  final FavoritesService _favoritesService = const FavoritesService();
   final LiveLocationService _locationService = LiveLocationService();
 
   late final ToiletRepository _toiletRepository;
@@ -94,6 +97,7 @@ class _HomePageState extends State<HomePage> {
   bool _isPickingLocation = false;
 
   final List<Map<String, dynamic>> toilets = [];
+  Set<String> _favoritePlaceKeys = const {};
 
   String? username;
 
@@ -140,6 +144,17 @@ class _HomePageState extends State<HomePage> {
         maxMarkers: MediaQuery.sizeOf(context).width < 600 ? 44 : 72,
       );
 
+  List<PlaceMarkerGroup> get displayedPlaceGroups {
+    final size = MediaQuery.sizeOf(context);
+    return MapMarkerClustering.group(
+      displayedPlaces,
+      bounds: _visibleMapBounds,
+      viewportWidth: size.width,
+      viewportHeight: size.height,
+      zoom: _mapZoom,
+    );
+  }
+
   bool get showZoomHint =>
       !MapDisplayPolicy.canShowPlaces(_mapZoom) && !_isPickingLocation;
 
@@ -165,6 +180,10 @@ class _HomePageState extends State<HomePage> {
       !showPhoneCharging ||
       !showEvCharging;
 
+  List<Map<String, dynamic>> get favoritePlaces => toilets
+      .where((place) => _favoritePlaceKeys.contains(PlaceInfo.keyOf(place)))
+      .toList(growable: false);
+
   @override
   void initState() {
     super.initState();
@@ -174,6 +193,7 @@ class _HomePageState extends State<HomePage> {
     _locationSubscription = _locationService.positions.listen(_applyPosition);
 
     loadUsername();
+    unawaited(_loadFavorites());
     unawaited(_startLocation(requestPermission: false));
     loadToilets();
   }
@@ -210,6 +230,53 @@ class _HomePageState extends State<HomePage> {
         showUsernameDialog();
       }
     });
+  }
+
+  Future<void> _loadFavorites() async {
+    final savedKeys = await _favoritesService.load();
+    if (!mounted) return;
+    setState(() => _favoritePlaceKeys = savedKeys);
+  }
+
+  bool _isFavorite(Map<String, dynamic> place) {
+    return _favoritePlaceKeys.contains(PlaceInfo.keyOf(place));
+  }
+
+  Future<bool> _toggleFavorite(Map<String, dynamic> place) async {
+    final placeKey = PlaceInfo.keyOf(place);
+    final wasFavorite = _favoritePlaceKeys.contains(placeKey);
+    final updatedKeys = Set<String>.of(_favoritePlaceKeys);
+    wasFavorite ? updatedKeys.remove(placeKey) : updatedKeys.add(placeKey);
+
+    setState(() => _favoritePlaceKeys = updatedKeys);
+
+    try {
+      await _favoritesService.save(updatedKeys);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _favoritePlaceKeys = Set<String>.of(_favoritePlaceKeys)
+            ..remove(placeKey)
+            ..addAll(wasFavorite ? {placeKey} : const <String>{});
+        });
+      }
+      return wasFavorite;
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+          content: Text(
+            wasFavorite
+                ? 'Место удалено из избранного'
+                : 'Место сохранено в избранное',
+          ),
+        ),
+      );
+    }
+    return !wasFavorite;
   }
 
   Future<void> showUsernameDialog() async {
@@ -467,6 +534,39 @@ class _HomePageState extends State<HomePage> {
     );
 
     if (place == null || !mounted) return;
+    await _focusOnPlace(place);
+  }
+
+  Future<void> showFavorites() async {
+    final camera = _mapController.camera;
+    final places = favoritePlaces;
+    final place = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppPalette.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      builder: (context) => PlaceSearchSheet(
+        places: places,
+        origin: camera.center,
+        title: 'Избранное',
+        subtitle: '${places.length} сохранено на этом устройстве',
+        headerIcon: Icons.bookmarks_rounded,
+        autofocus: false,
+        sectionLabel: 'Сохранённые места',
+        emptyTitle: 'Избранное пока пусто',
+        emptyMessage: 'Открой любое место на карте и нажми на значок закладки',
+      ),
+    );
+
+    if (place == null || !mounted) return;
+    await _focusOnPlace(place);
+  }
+
+  Future<void> _focusOnPlace(Map<String, dynamic> place) async {
+    if (!mounted) return;
 
     final kind = PlaceInfo.kindOf(place);
     final point = LatLng(
@@ -565,7 +665,7 @@ class _HomePageState extends State<HomePage> {
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Доступно для коляски'),
                       subtitle: const Text(
-                        'Только точки с отметкой wheelchair',
+                        'Только места с подтверждённым доступом',
                       ),
                       value: wheelchairOnly,
                       onChanged: (value) {
@@ -574,8 +674,10 @@ class _HomePageState extends State<HomePage> {
                     ),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Только точки сообщества'),
-                      subtitle: const Text('Скрыть импорт OpenStreetMap'),
+                      title: const Text('Добавленные пользователями'),
+                      subtitle: const Text(
+                        'Скрыть автоматически загруженные точки',
+                      ),
                       value: communityOnly,
                       onChanged: (value) {
                         setSheetState(() => communityOnly = value);
@@ -966,6 +1068,8 @@ class _HomePageState extends State<HomePage> {
           isBuildingRoute: isBuildingRoute,
           isSubmittingReport: isSubmittingReport,
           isSubmittingVote: isSubmittingVote,
+          isFavorite: _isFavorite(toilet),
+          onFavorite: () => _toggleFavorite(toilet),
           onVote: (isCurrent) async {
             Navigator.of(context).pop();
             await submitVote(toilet, isCurrent: isCurrent);
@@ -1285,6 +1389,11 @@ class _HomePageState extends State<HomePage> {
     _mapController.move(camera.center, nextZoom);
   }
 
+  void _openPlaceCluster(PlaceMarkerGroup group) {
+    final zoomStep = group.places.length >= 8 ? 2.2 : 1.7;
+    _mapController.move(group.center, min(_mapZoom + zoomStep, _maxMapZoom));
+  }
+
   void _handleMapPositionChanged(MapCamera camera, bool hasGesture) {
     if (hasGesture && _followUser) {
       _followUser = false;
@@ -1340,11 +1449,35 @@ class _HomePageState extends State<HomePage> {
               onPositionChanged: _handleMapPositionChanged,
             ),
             children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.tmaps.app',
-                keepBuffer: 1,
-                panBuffer: 0,
+              ColorFiltered(
+                colorFilter: const ColorFilter.matrix([
+                  0.74,
+                  0.17,
+                  0.04,
+                  0,
+                  18,
+                  0.08,
+                  0.82,
+                  0.05,
+                  0,
+                  20,
+                  0.06,
+                  0.17,
+                  0.72,
+                  0,
+                  23,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                ]),
+                child: TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.tmaps.app',
+                  keepBuffer: 1,
+                  panBuffer: 0,
+                ),
               ),
               const RichAttributionWidget(
                 attributions: [
@@ -1373,7 +1506,29 @@ class _HomePageState extends State<HomePage> {
               // =================================================
               if (!_isPickingLocation)
                 MarkerLayer(
-                  markers: displayedPlaces.map((toilet) {
+                  markers: displayedPlaceGroups.map((group) {
+                    if (group.isCluster) {
+                      return Marker(
+                        key: ValueKey(
+                          'cluster:${group.center.latitude}:'
+                          '${group.center.longitude}:${group.places.length}',
+                        ),
+                        point: group.center,
+                        width: 62,
+                        height: 62,
+                        child: _AppearingPlaceMarker(
+                          child: _PlaceClusterMarker(
+                            count: group.places.length,
+                            icon: selectedCategory?.icon ?? Icons.wc_rounded,
+                            color:
+                                selectedCategory?.color ?? AppPalette.emerald,
+                            onTap: () => _openPlaceCluster(group),
+                          ),
+                        ),
+                      );
+                    }
+
+                    final toilet = group.places.single;
                     final double lat = (toilet['lat'] as num).toDouble();
 
                     final double lng = (toilet['lng'] as num).toDouble();
@@ -1489,12 +1644,10 @@ class _HomePageState extends State<HomePage> {
                           : null,
                     ),
                     const SizedBox(height: 12),
-                    _MapActionButton(
-                      icon: Icons.search_rounded,
-                      onPressed: showPlaceSearch,
-                      tooltip: 'Поиск места',
-                      backgroundColor: const Color(0xFFE6FFFA),
-                      foregroundColor: AppPalette.aqua,
+                    _MapDiscoveryControl(
+                      onSearch: showPlaceSearch,
+                      onFavorites: showFavorites,
+                      favoritesCount: _favoritePlaceKeys.length,
                     ),
                     const SizedBox(height: 12),
                     _MapActionButton(
@@ -1793,11 +1946,66 @@ class _GlassHeader extends StatelessWidget {
   }
 }
 
-class _MapLegendBar extends StatelessWidget {
+class _MapLegendBar extends StatefulWidget {
   final PlaceKind? selectedKind;
   final ValueChanged<PlaceKind?> onSelected;
 
   const _MapLegendBar({required this.selectedKind, required this.onSelected});
+
+  @override
+  State<_MapLegendBar> createState() => _MapLegendBarState();
+}
+
+class _MapLegendBarState extends State<_MapLegendBar> {
+  final ScrollController _scrollController = ScrollController();
+  bool _canScrollBack = false;
+  bool _canScrollForward = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_updateScrollButtons);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateScrollButtons());
+  }
+
+  @override
+  void didUpdateWidget(covariant _MapLegendBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateScrollButtons());
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_updateScrollButtons)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _updateScrollButtons() {
+    if (!mounted || !_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final canScrollBack = position.pixels > 2;
+    final canScrollForward = position.pixels < position.maxScrollExtent - 2;
+    if (_canScrollBack == canScrollBack &&
+        _canScrollForward == canScrollForward) {
+      return;
+    }
+    setState(() {
+      _canScrollBack = canScrollBack;
+      _canScrollForward = canScrollForward;
+    });
+  }
+
+  Future<void> _scrollBy(double delta) async {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    await _scrollController.animateTo(
+      (position.pixels + delta).clamp(0, position.maxScrollExtent).toDouble(),
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1809,30 +2017,98 @@ class _MapLegendBar extends StatelessWidget {
         color: Colors.white.withValues(alpha: 0.94),
         borderRadius: BorderRadius.circular(18),
         clipBehavior: Clip.antiAlias,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 44),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 5),
-            child: Row(
-              children: [
-                _LegendItem(
-                  color: Color(0xFF16A34A),
-                  icon: Icons.wc_rounded,
-                  label: 'Туалеты',
-                  selected: selectedKind == null,
-                  onTap: () => onSelected(null),
+        child: SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: Stack(
+            children: [
+              SingleChildScrollView(
+                controller: _scrollController,
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                child: Row(
+                  children: [
+                    _LegendItem(
+                      color: Color(0xFF16A34A),
+                      icon: Icons.wc_rounded,
+                      label: 'Туалеты',
+                      selected: widget.selectedKind == null,
+                      onTap: () => widget.onSelected(null),
+                    ),
+                    ...PlaceKind.values.map(
+                      (kind) => _LegendItem(
+                        color: kind.color,
+                        icon: kind.icon,
+                        label: kind.shortLabel,
+                        selected: widget.selectedKind == kind,
+                        onTap: () => widget.onSelected(kind),
+                      ),
+                    ),
+                  ],
                 ),
-                ...PlaceKind.values.map(
-                  (kind) => _LegendItem(
-                    color: kind.color,
-                    icon: kind.icon,
-                    label: kind.shortLabel,
-                    selected: selectedKind == kind,
-                    onTap: () => onSelected(kind),
-                  ),
+              ),
+              if (_canScrollBack)
+                _LegendScrollButton(
+                  icon: Icons.chevron_left_rounded,
+                  alignment: Alignment.centerLeft,
+                  tooltip: 'Предыдущие категории',
+                  onPressed: () => _scrollBy(-190),
                 ),
-              ],
+              if (_canScrollForward)
+                _LegendScrollButton(
+                  icon: Icons.chevron_right_rounded,
+                  alignment: Alignment.centerRight,
+                  tooltip: 'Ещё категории',
+                  onPressed: () => _scrollBy(190),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LegendScrollButton extends StatelessWidget {
+  const _LegendScrollButton({
+    required this.icon,
+    required this.alignment,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final Alignment alignment;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final isLeft = alignment == Alignment.centerLeft;
+    return Positioned(
+      left: isLeft ? 0 : null,
+      right: isLeft ? null : 0,
+      top: 0,
+      bottom: 0,
+      child: Container(
+        width: 42,
+        alignment: alignment,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: isLeft ? Alignment.centerLeft : Alignment.centerRight,
+            end: isLeft ? Alignment.centerRight : Alignment.centerLeft,
+            colors: [Colors.white, Colors.white.withValues(alpha: 0.72)],
+          ),
+        ),
+        child: Tooltip(
+          message: tooltip,
+          child: InkWell(
+            onTap: onPressed,
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              width: 34,
+              height: 34,
+              child: Icon(icon, color: AppPalette.emerald, size: 24),
             ),
           ),
         ),
@@ -1983,6 +2259,67 @@ class _AppearingPlaceMarker extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _PlaceClusterMarker extends StatelessWidget {
+  const _PlaceClusterMarker({
+    required this.count,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final int count;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: '$count мест рядом. Нажмите, чтобы приблизить',
+      child: Tooltip(
+        message: '$count мест рядом — приблизить',
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [color, Color.lerp(color, Colors.black, 0.18)!],
+              ),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 4),
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: Colors.white, size: 17),
+                Text(
+                  '$count',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    height: 0.95,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -2159,6 +2496,52 @@ class _UserLocationMarker extends StatelessWidget {
 // КНОПКА КАРТЫ
 // =============================================================
 
+class _MapDiscoveryControl extends StatelessWidget {
+  const _MapDiscoveryControl({
+    required this.onSearch,
+    required this.onFavorites,
+    required this.favoritesCount,
+  });
+
+  final VoidCallback onSearch;
+  final VoidCallback onFavorites;
+  final int favoritesCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 9,
+      shadowColor: Colors.black.withValues(alpha: 0.2),
+      color: Colors.white.withValues(alpha: 0.97),
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ZoomButton(
+            icon: Icons.search_rounded,
+            tooltip: 'Поиск места',
+            onPressed: onSearch,
+            foregroundColor: AppPalette.aqua,
+          ),
+          Container(width: 27, height: 1, color: const Color(0xFFE5E7EB)),
+          _ZoomButton(
+            icon: favoritesCount > 0
+                ? Icons.bookmark_rounded
+                : Icons.bookmark_border_rounded,
+            tooltip: 'Избранное: $favoritesCount',
+            onPressed: onFavorites,
+            foregroundColor: favoritesCount > 0
+                ? AppPalette.pink
+                : AppPalette.muted,
+            badgeCount: favoritesCount,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MapZoomControl extends StatelessWidget {
   const _MapZoomControl({required this.onZoomIn, required this.onZoomOut});
 
@@ -2198,11 +2581,15 @@ class _ZoomButton extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onPressed,
+    this.foregroundColor = AppPalette.ink,
+    this.badgeCount = 0,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback? onPressed;
+  final Color foregroundColor;
+  final int badgeCount;
 
   @override
   Widget build(BuildContext context) {
@@ -2213,10 +2600,38 @@ class _ZoomButton extends StatelessWidget {
         child: SizedBox(
           width: 48,
           height: 42,
-          child: Icon(
-            icon,
-            size: 23,
-            color: onPressed == null ? AppPalette.muted : AppPalette.ink,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 23,
+                color: onPressed == null ? AppPalette.muted : foregroundColor,
+              ),
+              if (badgeCount > 0)
+                Positioned(
+                  top: 3,
+                  right: 3,
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 16),
+                    height: 16,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: AppPalette.pink,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      badgeCount > 99 ? '99+' : '$badgeCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
@@ -2422,6 +2837,8 @@ class _ToiletInfoSheet extends StatelessWidget {
   final bool isBuildingRoute;
   final bool isSubmittingReport;
   final bool isSubmittingVote;
+  final bool isFavorite;
+  final Future<bool> Function() onFavorite;
   final ValueChanged<bool> onVote;
   final VoidCallback onReport;
   final VoidCallback onRoute;
@@ -2450,6 +2867,8 @@ class _ToiletInfoSheet extends StatelessWidget {
     required this.isBuildingRoute,
     required this.isSubmittingReport,
     required this.isSubmittingVote,
+    required this.isFavorite,
+    required this.onFavorite,
     required this.onVote,
     required this.onReport,
     required this.onRoute,
@@ -2570,6 +2989,11 @@ class _ToiletInfoSheet extends StatelessWidget {
                         ],
                       ),
                     ),
+                    _FavoriteButton(
+                      initialValue: isFavorite,
+                      onToggle: onFavorite,
+                    ),
+                    const SizedBox(width: 4),
                     IconButton(
                       onPressed: onClose,
                       icon: const Icon(Icons.close_rounded),
@@ -2841,6 +3265,62 @@ class _ToiletInfoSheet extends StatelessWidget {
 // =============================================================
 // INFO CARD
 // =============================================================
+
+class _FavoriteButton extends StatefulWidget {
+  const _FavoriteButton({required this.initialValue, required this.onToggle});
+
+  final bool initialValue;
+  final Future<bool> Function() onToggle;
+
+  @override
+  State<_FavoriteButton> createState() => _FavoriteButtonState();
+}
+
+class _FavoriteButtonState extends State<_FavoriteButton> {
+  late bool _isFavorite = widget.initialValue;
+  bool _isSaving = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton.filledTonal(
+      tooltip: _isFavorite ? 'Убрать из избранного' : 'Сохранить место',
+      style: IconButton.styleFrom(
+        backgroundColor: _isFavorite
+            ? AppPalette.pink.withValues(alpha: 0.13)
+            : const Color(0xFFF1F5F4),
+        foregroundColor: _isFavorite ? AppPalette.pink : AppPalette.muted,
+      ),
+      onPressed: _isSaving
+          ? null
+          : () async {
+              setState(() => _isSaving = true);
+              final savedValue = await widget.onToggle();
+              if (!mounted) return;
+              setState(() {
+                _isFavorite = savedValue;
+                _isSaving = false;
+              });
+            },
+      icon: _isSaving
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2.2),
+            )
+          : AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              transitionBuilder: (child, animation) =>
+                  ScaleTransition(scale: animation, child: child),
+              child: Icon(
+                _isFavorite
+                    ? Icons.bookmark_rounded
+                    : Icons.bookmark_border_rounded,
+                key: ValueKey(_isFavorite),
+              ),
+            ),
+    );
+  }
+}
 
 class _InfoCard extends StatelessWidget {
   final IconData icon;

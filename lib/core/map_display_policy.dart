@@ -4,7 +4,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 abstract final class MapDisplayPolicy {
-  static const double minPlaceZoom = 7.2;
+  static const double minPlaceZoom = 11.2;
   static const int maxVisibleMarkers = 90;
 
   static final kazakhstanBounds = LatLngBounds(
@@ -62,10 +62,10 @@ abstract final class MapDisplayPolicy {
 
   static int _limitForZoom(double zoom, int requestedLimit) {
     final adaptiveLimit = switch (zoom) {
-      < 8.5 => 12,
-      < 10.5 => 22,
-      < 12.5 => 36,
-      < 14.5 => 52,
+      < 12 => 8,
+      < 13.2 => 16,
+      < 14.4 => 28,
+      < 15.5 => 44,
       _ => requestedLimit,
     };
     return adaptiveLimit < requestedLimit ? adaptiveLimit : requestedLimit;

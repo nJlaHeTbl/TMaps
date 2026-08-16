@@ -12,10 +12,11 @@ class PlaceSearchResult {
 abstract final class PlaceSearch {
   static const _aliases = <PlaceKind, String>{
     PlaceKind.publicToilet: 'туалет wc уборная санузел',
-    PlaceKind.communityToilet: 'туалет wc от людей сообщество',
+    PlaceKind.communityToilet:
+        'туалет wc от людей сообщество добавили пользователи',
     PlaceKind.cafe: 'кафе еда ресторан кофе столовая',
     PlaceKind.fuel: 'азс заправка бензин топливо',
-    PlaceKind.organization: 'место организация заведение магазин',
+    PlaceKind.organization: 'место организация заведение магазин учреждение',
     PlaceKind.phoneCharging: 'телефон зарядка розетка usb',
     PlaceKind.evCharging: 'электро электромобиль зарядка авто ev',
   };
