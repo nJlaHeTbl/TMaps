@@ -70,6 +70,9 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   static const Color green = Color(0xFF16A34A);
+  static const double _initialMapZoom = 15.8;
+  static const double _minMapZoom = 5.4;
+  static const double _maxMapZoom = 19;
 
   final MapController _mapController = MapController();
   final RouteService _routeService = const RouteService();
@@ -83,7 +86,7 @@ class _HomePageState extends State<HomePage> {
   LatLng _pickedPosition = const LatLng(45.0156, 78.3731);
   LatLngBounds? _visibleMapBounds;
   LocationAccessState _locationState = LocationAccessState.permissionNeeded;
-  double _mapZoom = 15;
+  double _mapZoom = _initialMapZoom;
   double _locationAccuracy = 0;
   double _locationHeading = 0;
   bool _followUser = false;
@@ -1238,6 +1241,14 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  void _changeMapZoom(double delta) {
+    final camera = _mapController.camera;
+    final nextZoom = (camera.zoom + delta)
+        .clamp(_minMapZoom, _maxMapZoom)
+        .toDouble();
+    _mapController.move(camera.center, nextZoom);
+  }
+
   void _handleMapPositionChanged(MapCamera camera, bool hasGesture) {
     if (hasGesture && _followUser) {
       _followUser = false;
@@ -1280,9 +1291,12 @@ class _HomePageState extends State<HomePage> {
             mapController: _mapController,
             options: MapOptions(
               initialCenter: currentPosition,
-              initialZoom: 15,
-              minZoom: 5.4,
-              maxZoom: 19,
+              initialZoom: _initialMapZoom,
+              minZoom: _minMapZoom,
+              maxZoom: _maxMapZoom,
+              interactionOptions: const InteractionOptions(
+                scrollWheelVelocity: 0.0015,
+              ),
               cameraConstraint: CameraConstraint.containCenter(
                 bounds: MapDisplayPolicy.kazakhstanBounds,
               ),
@@ -1331,23 +1345,27 @@ class _HomePageState extends State<HomePage> {
                     final bool isFree = toilet['is_free'] == true;
                     final bool feeKnown = toilet['fee_known'] != false;
                     final placeKind = PlaceInfo.kindOf(toilet);
+                    final placeKey = PlaceInfo.keyOf(toilet);
 
                     return Marker(
+                      key: ValueKey(placeKey),
                       point: LatLng(lat, lng),
                       width: 58,
                       height: 68,
-                      child: Semantics(
-                        button: true,
-                        label:
-                            '${PlaceInfo.kindLabel(toilet)}: ${PlaceInfo.titleOf(toilet)}',
-                        child: GestureDetector(
-                          onTap: () {
-                            showToiletInfo(toilet);
-                          },
-                          child: _PlaceMarker(
-                            isFree: isFree,
-                            feeKnown: feeKnown,
-                            placeKind: placeKind,
+                      child: _AppearingPlaceMarker(
+                        child: Semantics(
+                          button: true,
+                          label:
+                              '${PlaceInfo.kindLabel(toilet)}: ${PlaceInfo.titleOf(toilet)}',
+                          child: GestureDetector(
+                            onTap: () {
+                              showToiletInfo(toilet);
+                            },
+                            child: _PlaceMarker(
+                              isFree: isFree,
+                              feeKnown: feeKnown,
+                              placeKind: placeKind,
+                            ),
                           ),
                         ),
                       ),
@@ -1426,6 +1444,15 @@ class _HomePageState extends State<HomePage> {
               child: SafeArea(
                 child: Column(
                   children: [
+                    _MapZoomControl(
+                      onZoomIn: _mapZoom < _maxMapZoom
+                          ? () => _changeMapZoom(0.75)
+                          : null,
+                      onZoomOut: _mapZoom > _minMapZoom
+                          ? () => _changeMapZoom(-0.75)
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
                     _MapActionButton(
                       icon: Icons.my_location_rounded,
                       onPressed: centerOnUser,
@@ -1646,14 +1673,28 @@ class _GlassHeader extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      summary,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade700,
-                        fontWeight: FontWeight.w600,
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      transitionBuilder: (child, animation) => FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0, 0.22),
+                            end: Offset.zero,
+                          ).animate(animation),
+                          child: child,
+                        ),
+                      ),
+                      child: Text(
+                        summary,
+                        key: ValueKey(summary),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
@@ -1798,23 +1839,31 @@ class _LegendItem extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
                 width: 27,
                 height: 27,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: selected ? 0.2 : 0.12),
                   borderRadius: BorderRadius.circular(9),
                 ),
-                child: Icon(icon, color: color, size: 17),
+                child: AnimatedScale(
+                  scale: selected ? 1.12 : 1,
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  child: Icon(icon, color: color, size: 17),
+                ),
               ),
               const SizedBox(width: 6),
-              Text(
-                label,
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 180),
                 style: TextStyle(
                   fontSize: 11.5,
                   fontWeight: FontWeight.w800,
                   color: selected ? color : const Color(0xFF1F2937),
                 ),
+                child: Text(label),
               ),
             ],
           ),
@@ -1864,6 +1913,35 @@ class _FilterCategoryChip extends StatelessWidget {
 // =============================================================
 // МАРКЕР ТУАЛЕТА
 // =============================================================
+
+class _AppearingPlaceMarker extends StatelessWidget {
+  const _AppearingPlaceMarker({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+      child: child,
+      builder: (context, value, animatedChild) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 7 * (1 - value)),
+            child: Transform.scale(
+              scale: 0.78 + value * 0.22,
+              alignment: Alignment.bottomCenter,
+              child: animatedChild,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
 
 class _PlaceMarker extends StatelessWidget {
   final bool isFree;
@@ -2037,6 +2115,71 @@ class _UserLocationMarker extends StatelessWidget {
 // КНОПКА КАРТЫ
 // =============================================================
 
+class _MapZoomControl extends StatelessWidget {
+  const _MapZoomControl({required this.onZoomIn, required this.onZoomOut});
+
+  final VoidCallback? onZoomIn;
+  final VoidCallback? onZoomOut;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 9,
+      shadowColor: Colors.black.withValues(alpha: 0.2),
+      color: Colors.white.withValues(alpha: 0.97),
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ZoomButton(
+            icon: Icons.add_rounded,
+            tooltip: 'Приблизить карту',
+            onPressed: onZoomIn,
+          ),
+          Container(width: 27, height: 1, color: const Color(0xFFE5E7EB)),
+          _ZoomButton(
+            icon: Icons.remove_rounded,
+            tooltip: 'Отдалить карту',
+            onPressed: onZoomOut,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ZoomButton extends StatelessWidget {
+  const _ZoomButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        child: SizedBox(
+          width: 48,
+          height: 42,
+          child: Icon(
+            icon,
+            size: 23,
+            color: onPressed == null ? AppPalette.muted : AppPalette.ink,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MapActionButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onPressed;
@@ -2108,9 +2251,20 @@ class _MapCounter extends StatelessWidget {
               size: 19,
             ),
             const SizedBox(width: 6),
-            Text(
-              '$count • $label',
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              transitionBuilder: (child, animation) => ScaleTransition(
+                scale: Tween<double>(begin: 0.92, end: 1).animate(animation),
+                child: FadeTransition(opacity: animation, child: child),
+              ),
+              child: Text(
+                '$count • $label',
+                key: ValueKey('$count-$label'),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                ),
+              ),
             ),
           ],
         ),
