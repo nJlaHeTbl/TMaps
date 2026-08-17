@@ -967,13 +967,15 @@ class _HomePageState extends State<HomePage> {
   // ДОБАВЛЕНИЕ ТУАЛЕТА
   // =========================================================
 
+  Future<bool> _ensureValidUsername() async {
+    if (ContentGuard.validateUsername(username) == null) return true;
+
+    await showUsernameDialog();
+    return mounted && ContentGuard.validateUsername(username) == null;
+  }
+
   Future<void> addToilet() async {
     if (isAddingToilet) return;
-
-    if (ContentGuard.validateUsername(username) != null) {
-      await showUsernameDialog();
-      if (!mounted || ContentGuard.validateUsername(username) != null) return;
-    }
 
     final mode = await showModalBottomSheet<AddLocationMode>(
       context: context,
@@ -988,6 +990,8 @@ class _HomePageState extends State<HomePage> {
       await showSubmissionHistory();
       return;
     }
+
+    if (!await _ensureValidUsername()) return;
 
     if (mode == AddLocationMode.current) {
       setState(() => isAddingToilet = true);
@@ -1007,12 +1011,22 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    _beginLocationPicker();
+  }
+
+  void _beginLocationPicker([LatLng? position]) {
+    if (isAddingToilet) return;
+
     final camera = _mapController.camera;
+    final target = position ?? camera.center;
     setState(() {
       _followUser = false;
       _isPickingLocation = true;
-      _pickedPosition = camera.center;
+      _pickedPosition = target;
     });
+    if (position != null) {
+      _mapController.move(target, max(camera.zoom, 16.2));
+    }
   }
 
   void _cancelLocationPicker() {
@@ -1020,6 +1034,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _confirmPickedLocation() async {
+    if (!await _ensureValidUsername()) return;
+
     final position = _pickedPosition;
     setState(() {
       _isPickingLocation = false;
@@ -1631,6 +1647,10 @@ class _HomePageState extends State<HomePage> {
               backgroundColor: theme.scaffoldBackgroundColor,
               onMapReady: _syncMapCamera,
               onPositionChanged: _handleMapPositionChanged,
+              onLongPress: (_, position) {
+                if (_isPickingLocation || isAddingToilet) return;
+                _beginLocationPicker(position);
+              },
             ),
             children: [
               ColorFiltered(

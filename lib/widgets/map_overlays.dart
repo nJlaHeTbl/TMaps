@@ -44,7 +44,7 @@ class AddLocationChoiceSheet extends StatelessWidget {
             _LocationChoice(
               icon: Icons.map_rounded,
               title: 'Выбрать на карте',
-              subtitle: 'Добавить место удалённо в любой точке Казахстана',
+              subtitle: 'Наведи центр карты или удерживай нужное место',
               gradient: AppPalette.warmGradient,
               onTap: () => Navigator.pop(context, AddLocationMode.chooseOnMap),
             ),
