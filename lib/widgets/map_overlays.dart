@@ -71,7 +71,7 @@ class _LocationChoice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(22),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -188,7 +188,9 @@ class PlacePickerOverlay extends StatelessWidget {
               child: Material(
                 elevation: 18,
                 shadowColor: Colors.black38,
-                color: Colors.white.withValues(alpha: 0.96),
+                color: Theme.of(
+                  context,
+                ).colorScheme.surface.withValues(alpha: 0.96),
                 borderRadius: BorderRadius.circular(25),
                 child: Padding(
                   padding: const EdgeInsets.all(13),
@@ -349,7 +351,7 @@ class MapEmptyHint extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       elevation: 10,
-      color: Colors.white.withValues(alpha: 0.96),
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.96),
       borderRadius: BorderRadius.circular(17),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
@@ -411,7 +413,7 @@ class LocationPromptCard extends StatelessWidget {
     return Material(
       elevation: 12,
       shadowColor: Colors.black26,
-      color: Colors.white.withValues(alpha: 0.96),
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.96),
       borderRadius: BorderRadius.circular(21),
       child: InkWell(
         onTap: onEnable,

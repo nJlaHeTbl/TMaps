@@ -24,7 +24,7 @@ abstract final class PlaceVisibilityPolicy {
     }
 
     if (freeOnly &&
-        (!hasToilet ||
+        ((!hasToilet && kind != PlaceKind.water) ||
             place['fee_known'] == false ||
             place['is_free'] != true)) {
       return false;

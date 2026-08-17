@@ -27,5 +27,11 @@ void main() {
       ),
       isNotEmpty,
     );
+    expect(
+      places.where(
+        (place) => (place as Map<String, dynamic>)['place_kind'] == 'water',
+      ),
+      isNotEmpty,
+    );
   });
 }

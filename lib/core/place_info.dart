@@ -6,6 +6,7 @@ enum PlaceKind {
   organization,
   phoneCharging,
   evCharging,
+  water,
 }
 
 class PlaceInfo {
@@ -19,6 +20,7 @@ class PlaceInfo {
       'organization' => PlaceKind.organization,
       'phone_charging' => PlaceKind.phoneCharging,
       'ev_charging' => PlaceKind.evCharging,
+      'water' => PlaceKind.water,
       _ => PlaceKind.publicToilet,
     };
   }
@@ -29,7 +31,8 @@ class PlaceInfo {
     return reportedValue == true ||
         (reportedValue != false &&
             kind != PlaceKind.phoneCharging &&
-            kind != PlaceKind.evCharging);
+            kind != PlaceKind.evCharging &&
+            kind != PlaceKind.water);
   }
 
   static bool isVenue(Map<String, dynamic> place) {
@@ -48,6 +51,7 @@ class PlaceInfo {
       PlaceKind.organization => 'organization',
       PlaceKind.phoneCharging => 'phone_charging',
       PlaceKind.evCharging => 'ev_charging',
+      PlaceKind.water => 'water',
     };
   }
 
@@ -72,6 +76,7 @@ class PlaceInfo {
       PlaceKind.organization => 'Заведение или организация',
       PlaceKind.phoneCharging => 'Зарядка телефона',
       PlaceKind.evCharging => 'Зарядка электромобиля',
+      PlaceKind.water => waterTypeLabel(place),
       _ => 'Туалет',
     };
   }
@@ -83,6 +88,7 @@ class PlaceInfo {
       PlaceKind.organization => 'Организация',
       PlaceKind.phoneCharging => 'Зарядка мобильных устройств',
       PlaceKind.evCharging => 'Электрозарядная станция',
+      PlaceKind.water => 'Источник воды',
       PlaceKind.communityToilet => 'Добавлено пользователем TMaps',
       PlaceKind.publicToilet => 'Общественный туалет',
     };
@@ -95,6 +101,28 @@ class PlaceInfo {
       'permissive' => 'Обычно доступно',
       'destination' => 'Для посетителей',
       _ => 'Уточните на месте',
+    };
+  }
+
+  static bool? drinkingWater(Map<String, dynamic> place) {
+    final value = effectiveValue(place, 'drinking_water');
+    if (value is bool) return value;
+    return switch (value?.toString().toLowerCase()) {
+      'yes' || 'true' || '1' => true,
+      'no' || 'false' || '0' => false,
+      _ => null,
+    };
+  }
+
+  static String waterTypeLabel(Map<String, dynamic> place) {
+    return switch (effectiveValue(place, 'water_type')?.toString()) {
+      'vending_machine' => 'Автомат для набора воды',
+      'water_well' => 'Скважина или колодец',
+      'water_tap' => 'Уличная колонка',
+      'drinking_fountain' => 'Питьевой фонтанчик',
+      'spring' => 'Родник',
+      'water_point' => 'Точка набора воды',
+      _ => 'Источник питьевой воды',
     };
   }
 

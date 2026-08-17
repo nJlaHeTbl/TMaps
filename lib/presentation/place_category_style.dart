@@ -12,6 +12,7 @@ extension PlaceKindStyle on PlaceKind {
     PlaceKind.organization => 'Заведения',
     PlaceKind.phoneCharging => 'Зарядить телефон',
     PlaceKind.evCharging => 'Зарядка электромобилей',
+    PlaceKind.water => 'Питьевая вода',
   };
 
   IconData get icon => switch (this) {
@@ -22,6 +23,7 @@ extension PlaceKindStyle on PlaceKind {
     PlaceKind.organization => Icons.storefront_rounded,
     PlaceKind.phoneCharging => Icons.battery_charging_full_rounded,
     PlaceKind.evCharging => Icons.ev_station_rounded,
+    PlaceKind.water => Icons.water_drop_rounded,
   };
 
   Color get color => switch (this) {
@@ -32,5 +34,6 @@ extension PlaceKindStyle on PlaceKind {
     PlaceKind.organization => const Color(0xFF0F766E),
     PlaceKind.phoneCharging => AppPalette.sky,
     PlaceKind.evCharging => AppPalette.aqua,
+    PlaceKind.water => const Color(0xFF0284C7),
   };
 }

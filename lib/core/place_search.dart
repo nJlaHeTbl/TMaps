@@ -19,6 +19,9 @@ abstract final class PlaceSearch {
     PlaceKind.organization: 'место организация заведение магазин учреждение',
     PlaceKind.phoneCharging: 'телефон зарядка розетка usb',
     PlaceKind.evCharging: 'электро электромобиль зарядка авто ev',
+    PlaceKind.water:
+        'вода питьевая автомат водомат колонка водокачка скважина колодец '
+        'родник фонтанчик набрать бутыль',
   };
 
   static List<PlaceSearchResult> find(

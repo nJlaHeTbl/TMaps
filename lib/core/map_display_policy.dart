@@ -119,7 +119,10 @@ abstract final class MapDisplayPolicy {
     final kind = place['place_kind']?.toString();
     if (kind == 'public_toilet' || kind == 'community_toilet') return 0;
     if (place['has_toilet'] == true) return 1;
-    if (kind == 'phone_charging' || kind == 'ev_charging' || kind == 'fuel') {
+    if (kind == 'phone_charging' ||
+        kind == 'ev_charging' ||
+        kind == 'fuel' ||
+        kind == 'water') {
       return 2;
     }
     final name = place['name']?.toString().trim();

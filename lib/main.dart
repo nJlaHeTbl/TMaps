@@ -22,6 +22,7 @@ import 'presentation/place_category_style.dart';
 import 'services/favorites_service.dart';
 import 'services/live_location_service.dart';
 import 'services/route_service.dart';
+import 'services/theme_preference_service.dart';
 import 'widgets/map_overlays.dart';
 import 'widgets/place_search_sheet.dart';
 
@@ -50,8 +51,33 @@ Future<void> main() async {
   runApp(const TMapsApp());
 }
 
-class TMapsApp extends StatelessWidget {
+class TMapsApp extends StatefulWidget {
   const TMapsApp({super.key});
+
+  @override
+  State<TMapsApp> createState() => _TMapsAppState();
+}
+
+class _TMapsAppState extends State<TMapsApp> {
+  final ThemePreferenceService _themePreferenceService =
+      const ThemePreferenceService();
+  ThemeMode _themeMode = ThemeMode.system;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadTheme());
+  }
+
+  Future<void> _loadTheme() async {
+    final themeMode = await _themePreferenceService.load();
+    if (mounted) setState(() => _themeMode = themeMode);
+  }
+
+  Future<void> _setThemeMode(ThemeMode themeMode) async {
+    setState(() => _themeMode = themeMode);
+    await _themePreferenceService.save(themeMode);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,13 +85,22 @@ class TMapsApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'TMaps',
       theme: AppTheme.light,
-      home: const HomePage(),
+      darkTheme: AppTheme.dark,
+      themeMode: _themeMode,
+      home: HomePage(themeMode: _themeMode, onThemeModeChanged: _setThemeMode),
     );
   }
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({
+    super.key,
+    required this.themeMode,
+    required this.onThemeModeChanged,
+  });
+
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode> onThemeModeChanged;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -524,7 +559,7 @@ class _HomePageState extends State<HomePage> {
     final place = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppPalette.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
@@ -543,7 +578,7 @@ class _HomePageState extends State<HomePage> {
     final place = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppPalette.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
@@ -1038,6 +1073,10 @@ class _HomePageState extends State<HomePage> {
     final phoneCharging = _nullableBool(
       PlaceInfo.effectiveValue(toilet, 'phone_charging'),
     );
+    final drinkingWater = PlaceInfo.drinkingWater(toilet);
+    final waterRefill = _nullableBool(
+      PlaceInfo.effectiveValue(toilet, 'water_refill'),
+    );
 
     showModalBottomSheet(
       context: context,
@@ -1062,6 +1101,9 @@ class _HomePageState extends State<HomePage> {
           hasSoap: hasSoap,
           wheelchairAccessible: wheelchairAccessible,
           phoneCharging: phoneCharging,
+          drinkingWater: drinkingWater,
+          waterRefill: waterRefill,
+          waterTypeLabel: PlaceInfo.waterTypeLabel(toilet),
           reportCount: PlaceInfo.reportCount(toilet),
           likes: (toilet['likes'] as num?)?.toInt() ?? 0,
           dislikes: (toilet['dislikes'] as num?)?.toInt() ?? 0,
@@ -1424,9 +1466,12 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     return Scaffold(
       extendBodyBehindAppBar: true,
-      backgroundColor: Colors.white,
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: Stack(
         children: [
           // ===================================================
@@ -1445,33 +1490,59 @@ class _HomePageState extends State<HomePage> {
               cameraConstraint: CameraConstraint.containCenter(
                 bounds: MapDisplayPolicy.kazakhstanBounds,
               ),
+              backgroundColor: theme.scaffoldBackgroundColor,
               onMapReady: _syncMapCamera,
               onPositionChanged: _handleMapPositionChanged,
             ),
             children: [
               ColorFiltered(
-                colorFilter: const ColorFilter.matrix([
-                  0.74,
-                  0.17,
-                  0.04,
-                  0,
-                  18,
-                  0.08,
-                  0.82,
-                  0.05,
-                  0,
-                  20,
-                  0.06,
-                  0.17,
-                  0.72,
-                  0,
-                  23,
-                  0,
-                  0,
-                  0,
-                  1,
-                  0,
-                ]),
+                colorFilter: ColorFilter.matrix(
+                  isDark
+                      ? const [
+                          -0.13,
+                          -0.44,
+                          -0.05,
+                          0,
+                          170,
+                          -0.13,
+                          -0.44,
+                          -0.05,
+                          0,
+                          180,
+                          -0.13,
+                          -0.44,
+                          -0.05,
+                          0,
+                          175,
+                          0,
+                          0,
+                          0,
+                          1,
+                          0,
+                        ]
+                      : const [
+                          0.74,
+                          0.17,
+                          0.04,
+                          0,
+                          18,
+                          0.08,
+                          0.82,
+                          0.05,
+                          0,
+                          20,
+                          0.06,
+                          0.17,
+                          0.72,
+                          0,
+                          23,
+                          0,
+                          0,
+                          0,
+                          1,
+                          0,
+                        ],
+                ),
                 child: TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'com.tmaps.app',
@@ -1599,6 +1670,8 @@ class _HomePageState extends State<HomePage> {
                     username: username,
                     summary: _mapSummary,
                     onInstall: showInstallInstructions,
+                    themeMode: widget.themeMode,
+                    onThemeModeChanged: widget.onThemeModeChanged,
                   ),
                 ),
               ),
@@ -1656,10 +1729,10 @@ class _HomePageState extends State<HomePage> {
                       tooltip: 'Моё местоположение',
                       backgroundColor: _followUser
                           ? AppPalette.sky
-                          : Colors.white,
+                          : scheme.surface,
                       foregroundColor: _followUser
                           ? Colors.white
-                          : AppPalette.ink,
+                          : scheme.onSurface,
                     ),
                     const SizedBox(height: 12),
                     _MapActionButton(
@@ -1667,11 +1740,9 @@ class _HomePageState extends State<HomePage> {
                       onPressed: showFilters,
                       tooltip: 'Фильтры',
                       backgroundColor: filtersActive
-                          ? const Color(0xFFDCFCE7)
-                          : Colors.white,
-                      foregroundColor: filtersActive
-                          ? green
-                          : const Color(0xFF1F2937),
+                          ? green.withValues(alpha: isDark ? 0.28 : 0.14)
+                          : scheme.surface,
+                      foregroundColor: filtersActive ? green : scheme.onSurface,
                     ),
                     const SizedBox(height: 12),
                     _MapActionButton(
@@ -1798,15 +1869,21 @@ class _GlassHeader extends StatelessWidget {
   final String? username;
   final String summary;
   final VoidCallback onInstall;
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode> onThemeModeChanged;
 
   const _GlassHeader({
     required this.username,
     required this.summary,
     required this.onInstall,
+    required this.themeMode,
+    required this.onThemeModeChanged,
   });
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return ClipRRect(
       borderRadius: BorderRadius.circular(26),
       child: BackdropFilter(
@@ -1816,7 +1893,7 @@ class _GlassHeader extends StatelessWidget {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Colors.white.withValues(alpha: 0.96),
+                scheme.surface.withValues(alpha: 0.96),
                 AppPalette.mint.withValues(alpha: 0.18),
                 AppPalette.aqua.withValues(alpha: 0.10),
               ],
@@ -1824,7 +1901,12 @@ class _GlassHeader extends StatelessWidget {
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(26),
-            border: Border.all(color: Colors.white, width: 1.4),
+            border: Border.all(
+              color: isDark
+                  ? scheme.outlineVariant
+                  : Colors.white.withValues(alpha: 0.9),
+              width: 1.4,
+            ),
             boxShadow: [
               BoxShadow(
                 color: const Color(0xFF0F172A).withValues(alpha: 0.14),
@@ -1889,13 +1971,46 @@ class _GlassHeader extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.grey.shade700,
+                          color: scheme.onSurfaceVariant,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
                   ],
                 ),
+              ),
+              PopupMenuButton<ThemeMode>(
+                initialValue: themeMode,
+                tooltip: 'Оформление',
+                onSelected: onThemeModeChanged,
+                icon: Icon(switch (themeMode) {
+                  ThemeMode.light => Icons.light_mode_rounded,
+                  ThemeMode.dark => Icons.dark_mode_rounded,
+                  ThemeMode.system => Icons.phone_iphone_rounded,
+                }, size: 21),
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: ThemeMode.system,
+                    child: _ThemeMenuItem(
+                      icon: Icons.phone_iphone_rounded,
+                      label: 'Как на телефоне',
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: ThemeMode.light,
+                    child: _ThemeMenuItem(
+                      icon: Icons.light_mode_rounded,
+                      label: 'Светлая тема',
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: ThemeMode.dark,
+                    child: _ThemeMenuItem(
+                      icon: Icons.dark_mode_rounded,
+                      label: 'Тёмная тема',
+                    ),
+                  ),
+                ],
               ),
               IconButton.filledTonal(
                 onPressed: onInstall,
@@ -1911,9 +2026,11 @@ class _GlassHeader extends StatelessWidget {
                     vertical: 9,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.8),
+                    color: scheme.surfaceContainerHighest.withValues(
+                      alpha: 0.82,
+                    ),
                     borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: const Color(0xFFDDE9E1)),
+                    border: Border.all(color: scheme.outlineVariant),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1942,6 +2059,20 @@ class _GlassHeader extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ThemeMenuItem extends StatelessWidget {
+  const _ThemeMenuItem({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [Icon(icon, size: 20), const SizedBox(width: 10), Text(label)],
     );
   }
 }
@@ -2009,12 +2140,13 @@ class _MapLegendBarState extends State<_MapLegendBar> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Align(
       alignment: Alignment.centerLeft,
       child: Material(
         elevation: 7,
         shadowColor: Colors.black.withValues(alpha: 0.13),
-        color: Colors.white.withValues(alpha: 0.94),
+        color: scheme.surface.withValues(alpha: 0.94),
         borderRadius: BorderRadius.circular(18),
         clipBehavior: Clip.antiAlias,
         child: SizedBox(
@@ -2085,6 +2217,7 @@ class _LegendScrollButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isLeft = alignment == Alignment.centerLeft;
+    final surface = Theme.of(context).colorScheme.surface;
     return Positioned(
       left: isLeft ? 0 : null,
       right: isLeft ? null : 0,
@@ -2097,7 +2230,7 @@ class _LegendScrollButton extends StatelessWidget {
           gradient: LinearGradient(
             begin: isLeft ? Alignment.centerLeft : Alignment.centerRight,
             end: isLeft ? Alignment.centerRight : Alignment.centerLeft,
-            colors: [Colors.white, Colors.white.withValues(alpha: 0.72)],
+            colors: [surface, surface.withValues(alpha: 0.72)],
           ),
         ),
         child: Tooltip(
@@ -2134,6 +2267,7 @@ class _LegendItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
     return Semantics(
       button: true,
       selected: selected,
@@ -2181,7 +2315,7 @@ class _LegendItem extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 11.5,
                   fontWeight: FontWeight.w800,
-                  color: selected ? color : const Color(0xFF1F2937),
+                  color: selected ? color : onSurface,
                 ),
                 child: Text(label),
               ),
@@ -2350,6 +2484,7 @@ class _PlaceMarker extends StatelessWidget {
         const Color(0xFF0891B2),
         Icons.ev_station_rounded,
       ),
+      PlaceKind.water => (const Color(0xFF0284C7), Icons.water_drop_rounded),
       PlaceKind.cafe => (const Color(0xFFEA580C), Icons.restaurant_rounded),
       PlaceKind.fuel => (
         const Color(0xFF7C3AED),
@@ -2509,10 +2644,11 @@ class _MapDiscoveryControl extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Material(
       elevation: 9,
       shadowColor: Colors.black.withValues(alpha: 0.2),
-      color: Colors.white.withValues(alpha: 0.97),
+      color: scheme.surface.withValues(alpha: 0.97),
       borderRadius: BorderRadius.circular(18),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -2524,7 +2660,7 @@ class _MapDiscoveryControl extends StatelessWidget {
             onPressed: onSearch,
             foregroundColor: AppPalette.aqua,
           ),
-          Container(width: 27, height: 1, color: const Color(0xFFE5E7EB)),
+          Container(width: 27, height: 1, color: scheme.outlineVariant),
           _ZoomButton(
             icon: favoritesCount > 0
                 ? Icons.bookmark_rounded
@@ -2550,10 +2686,11 @@ class _MapZoomControl extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Material(
       elevation: 9,
       shadowColor: Colors.black.withValues(alpha: 0.2),
-      color: Colors.white.withValues(alpha: 0.97),
+      color: scheme.surface.withValues(alpha: 0.97),
       borderRadius: BorderRadius.circular(18),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -2564,7 +2701,7 @@ class _MapZoomControl extends StatelessWidget {
             tooltip: 'Приблизить карту',
             onPressed: onZoomIn,
           ),
-          Container(width: 27, height: 1, color: const Color(0xFFE5E7EB)),
+          Container(width: 27, height: 1, color: scheme.outlineVariant),
           _ZoomButton(
             icon: Icons.remove_rounded,
             tooltip: 'Отдалить карту',
@@ -2581,18 +2718,20 @@ class _ZoomButton extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onPressed,
-    this.foregroundColor = AppPalette.ink,
+    this.foregroundColor,
     this.badgeCount = 0,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback? onPressed;
-  final Color foregroundColor;
+  final Color? foregroundColor;
   final int badgeCount;
 
   @override
   Widget build(BuildContext context) {
+    final resolvedForeground =
+        foregroundColor ?? Theme.of(context).colorScheme.onSurface;
     return Tooltip(
       message: tooltip,
       child: InkWell(
@@ -2606,7 +2745,9 @@ class _ZoomButton extends StatelessWidget {
               Icon(
                 icon,
                 size: 23,
-                color: onPressed == null ? AppPalette.muted : foregroundColor,
+                color: onPressed == null
+                    ? AppPalette.muted
+                    : resolvedForeground,
               ),
               if (badgeCount > 0)
                 Positioned(
@@ -2643,8 +2784,8 @@ class _MapActionButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onPressed;
   final String? tooltip;
-  final Color backgroundColor;
-  final Color foregroundColor;
+  final Color? backgroundColor;
+  final Color? foregroundColor;
   final double size;
   final Widget? child;
 
@@ -2652,18 +2793,19 @@ class _MapActionButton extends StatelessWidget {
     required this.icon,
     required this.onPressed,
     this.tooltip,
-    this.backgroundColor = Colors.white,
-    this.foregroundColor = const Color(0xFF1F2937),
+    this.backgroundColor,
+    this.foregroundColor,
     this.size = 54,
     this.child,
   });
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final button = Material(
       elevation: 9,
       shadowColor: Colors.black.withValues(alpha: 0.22),
-      color: backgroundColor,
+      color: backgroundColor ?? scheme.surface,
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
@@ -2672,7 +2814,13 @@ class _MapActionButton extends StatelessWidget {
           width: size,
           height: size,
           child: Center(
-            child: child ?? Icon(icon, size: 25, color: foregroundColor),
+            child:
+                child ??
+                Icon(
+                  icon,
+                  size: 25,
+                  color: foregroundColor ?? scheme.onSurface,
+                ),
           ),
         ),
       ),
@@ -2697,7 +2845,7 @@ class _MapCounter extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       elevation: 8,
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(17),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
@@ -2751,7 +2899,7 @@ class _RoutePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       elevation: 12,
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(22),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
@@ -2831,6 +2979,9 @@ class _ToiletInfoSheet extends StatelessWidget {
   final bool? hasSoap;
   final bool? wheelchairAccessible;
   final bool? phoneCharging;
+  final bool? drinkingWater;
+  final bool? waterRefill;
+  final String waterTypeLabel;
   final int reportCount;
   final int likes;
   final int dislikes;
@@ -2861,6 +3012,9 @@ class _ToiletInfoSheet extends StatelessWidget {
     required this.hasSoap,
     required this.wheelchairAccessible,
     required this.phoneCharging,
+    required this.drinkingWater,
+    required this.waterRefill,
+    required this.waterTypeLabel,
     required this.reportCount,
     required this.likes,
     required this.dislikes,
@@ -2880,6 +3034,7 @@ class _ToiletInfoSheet extends StatelessWidget {
       PlaceKind.communityToilet || PlaceKind.publicToilet => Icons.wc_rounded,
       PlaceKind.phoneCharging => Icons.battery_charging_full_rounded,
       PlaceKind.evCharging => Icons.ev_station_rounded,
+      PlaceKind.water => Icons.water_drop_rounded,
       PlaceKind.cafe => Icons.restaurant_rounded,
       PlaceKind.fuel => Icons.local_gas_station_rounded,
       PlaceKind.organization => Icons.apartment_rounded,
@@ -2901,6 +3056,20 @@ class _ToiletInfoSheet extends StatelessWidget {
       placeKind == PlaceKind.fuel ||
       placeKind == PlaceKind.organization;
 
+  bool get isWater => placeKind == PlaceKind.water;
+
+  Color get waterSafetyColor => switch (drinkingWater) {
+    true => const Color(0xFF16A34A),
+    false => const Color(0xFFDC2626),
+    null => const Color(0xFFD97706),
+  };
+
+  String get waterSafetyLabel => switch (drinkingWater) {
+    true => 'Подтверждено',
+    false => 'Не для питья',
+    null => 'Не проверено',
+  };
+
   Color get conditionColor {
     if (condition == 'Хорошее') {
       return const Color(0xFF16A34A);
@@ -2919,11 +3088,12 @@ class _ToiletInfoSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return SafeArea(
       child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
         ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
@@ -3004,73 +3174,131 @@ class _ToiletInfoSheet extends StatelessWidget {
                 const SizedBox(height: 22),
 
                 // Информация
-                Row(
-                  children: [
-                    Expanded(
-                      child: _InfoCard(
-                        icon: Icons.star_rounded,
-                        iconColor: cleanliness > 0
-                            ? Colors.amber.shade700
-                            : Colors.blueGrey.shade600,
-                        title: 'Чистота',
-                        value: cleanliness > 0
-                            ? '$cleanliness / 5'
-                            : 'Не указано',
+                if (isWater) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _InfoCard(
+                          icon: Icons.water_drop_rounded,
+                          iconColor: placeColor,
+                          title: 'Тип точки',
+                          value: waterTypeLabel,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _InfoCard(
-                        icon: !feeKnown
-                            ? Icons.help_outline_rounded
-                            : isFree
-                            ? Icons.check_circle_rounded
-                            : Icons.payments_rounded,
-                        iconColor: !feeKnown
-                            ? Colors.blueGrey.shade600
-                            : isFree
-                            ? const Color(0xFF16A34A)
-                            : Colors.orange.shade700,
-                        title: hasToilet
-                            ? 'Стоимость'
-                            : isVenue
-                            ? 'Туалет'
-                            : 'Зарядка',
-                        value: !hasToilet && isVenue
-                            ? 'Не подтверждён'
-                            : !feeKnown
-                            ? 'Не указано'
-                            : isFree
-                            ? 'Бесплатно'
-                            : 'Платный',
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _InfoCard(
+                          icon: drinkingWater == true
+                              ? Icons.verified_rounded
+                              : Icons.warning_amber_rounded,
+                          iconColor: waterSafetyColor,
+                          title: 'Для питья',
+                          value: waterSafetyLabel,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 10),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: _InfoCard(
-                        icon: Icons.health_and_safety_rounded,
-                        iconColor: conditionColor,
-                        title: 'Состояние',
-                        value: condition,
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _InfoCard(
+                          icon: !feeKnown
+                              ? Icons.help_outline_rounded
+                              : isFree
+                              ? Icons.check_circle_rounded
+                              : Icons.payments_rounded,
+                          iconColor: !feeKnown
+                              ? Colors.blueGrey.shade600
+                              : isFree
+                              ? const Color(0xFF16A34A)
+                              : Colors.orange.shade700,
+                          title: 'Стоимость воды',
+                          value: !feeKnown
+                              ? 'Не указано'
+                              : isFree
+                              ? 'Бесплатно'
+                              : 'Платно',
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _InfoCard(
-                        icon: Icons.person_rounded,
-                        iconColor: const Color(0xFF2563EB),
-                        title: reportCount > 0 ? 'Обновил' : 'Добавил',
-                        value: author,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _InfoCard(
+                          icon: Icons.person_rounded,
+                          iconColor: const Color(0xFF2563EB),
+                          title: reportCount > 0 ? 'Обновил' : 'Добавил',
+                          value: author,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                ] else ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _InfoCard(
+                          icon: Icons.star_rounded,
+                          iconColor: cleanliness > 0
+                              ? Colors.amber.shade700
+                              : Colors.blueGrey.shade600,
+                          title: 'Чистота',
+                          value: cleanliness > 0
+                              ? '$cleanliness / 5'
+                              : 'Не указано',
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _InfoCard(
+                          icon: !feeKnown
+                              ? Icons.help_outline_rounded
+                              : isFree
+                              ? Icons.check_circle_rounded
+                              : Icons.payments_rounded,
+                          iconColor: !feeKnown
+                              ? Colors.blueGrey.shade600
+                              : isFree
+                              ? const Color(0xFF16A34A)
+                              : Colors.orange.shade700,
+                          title: hasToilet
+                              ? 'Стоимость'
+                              : isVenue
+                              ? 'Туалет'
+                              : 'Зарядка',
+                          value: !hasToilet && isVenue
+                              ? 'Не подтверждён'
+                              : !feeKnown
+                              ? 'Не указано'
+                              : isFree
+                              ? 'Бесплатно'
+                              : 'Платный',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _InfoCard(
+                          icon: Icons.health_and_safety_rounded,
+                          iconColor: conditionColor,
+                          title: 'Состояние',
+                          value: condition,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _InfoCard(
+                          icon: Icons.person_rounded,
+                          iconColor: const Color(0xFF2563EB),
+                          title: reportCount > 0 ? 'Обновил' : 'Добавил',
+                          value: author,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
 
                 const SizedBox(height: 10),
 
@@ -3080,6 +3308,39 @@ class _ToiletInfoSheet extends StatelessWidget {
                   title: 'Доступ',
                   value: accessLabel,
                 ),
+
+                if (isWater && drinkingWater != true) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(13),
+                    decoration: BoxDecoration(
+                      color: waterSafetyColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: waterSafetyColor.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_rounded, color: waterSafetyColor),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            drinkingWater == false
+                                ? 'Эта вода отмечена как непитьевая.'
+                                : 'Без подтверждения не пей воду прямо из источника.',
+                            style: TextStyle(
+                              color: waterSafetyColor,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
 
                 const SizedBox(height: 10),
 
@@ -3101,6 +3362,18 @@ class _ToiletInfoSheet extends StatelessWidget {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
+                    if (isWater)
+                      _AmenityStatusChip(
+                        icon: Icons.local_drink_rounded,
+                        label: 'Можно пить',
+                        value: drinkingWater,
+                      ),
+                    if (isWater)
+                      _AmenityStatusChip(
+                        icon: Icons.water_drop_outlined,
+                        label: 'Набрать в тару',
+                        value: waterRefill,
+                      ),
                     if (!hasToilet && isVenue)
                       const _AmenityStatusChip(
                         icon: Icons.wc_rounded,
@@ -3125,11 +3398,12 @@ class _ToiletInfoSheet extends StatelessWidget {
                         label: 'Для коляски',
                         value: wheelchairAccessible,
                       ),
-                    _AmenityStatusChip(
-                      icon: Icons.bolt_rounded,
-                      label: 'Зарядка телефона',
-                      value: phoneCharging,
-                    ),
+                    if (!isWater)
+                      _AmenityStatusChip(
+                        icon: Icons.bolt_rounded,
+                        label: 'Зарядка телефона',
+                        value: phoneCharging,
+                      ),
                   ],
                 ),
 
@@ -3139,7 +3413,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF7F8FA),
+                      color: scheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(18),
                     ),
                     child: Column(
@@ -3215,22 +3489,23 @@ class _ToiletInfoSheet extends StatelessWidget {
                   ],
                 ),
 
-                const SizedBox(height: 12),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: isSubmittingReport ? null : onReport,
-                    icon: const Icon(Icons.rate_review_outlined),
-                    label: Text(
-                      reportCount == 0
-                          ? 'Обновить информацию или оставить отзыв'
-                          : 'Отзывы и обновления: $reportCount · Добавить',
+                if (!isWater) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: isSubmittingReport ? null : onReport,
+                      icon: const Icon(Icons.rate_review_outlined),
+                      label: Text(
+                        reportCount == 0
+                            ? 'Обновить информацию или оставить отзыв'
+                            : 'Отзывы и обновления: $reportCount · Добавить',
+                      ),
                     ),
                   ),
-                ),
+                ],
 
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
 
                 SizedBox(
                   width: double.infinity,
@@ -3282,12 +3557,13 @@ class _FavoriteButtonState extends State<_FavoriteButton> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return IconButton.filledTonal(
       tooltip: _isFavorite ? 'Убрать из избранного' : 'Сохранить место',
       style: IconButton.styleFrom(
         backgroundColor: _isFavorite
             ? AppPalette.pink.withValues(alpha: 0.13)
-            : const Color(0xFFF1F5F4),
+            : scheme.surfaceContainerHighest,
         foregroundColor: _isFavorite ? AppPalette.pink : AppPalette.muted,
       ),
       onPressed: _isSaving
@@ -3337,10 +3613,11 @@ class _InfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F8FA),
+        color: scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(17),
       ),
       child: Row(
@@ -3365,7 +3642,7 @@ class _InfoCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 11,
-                    color: Colors.grey.shade600,
+                    color: scheme.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -3615,9 +3892,9 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
           constraints: BoxConstraints(
             maxHeight: MediaQuery.sizeOf(context).height * 0.92,
           ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
           ),
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
@@ -3879,9 +4156,9 @@ class _AddToiletSheet extends StatelessWidget {
     return SafeArea(
       child: Container(
         constraints: const BoxConstraints(maxHeight: 700),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
         ),
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),

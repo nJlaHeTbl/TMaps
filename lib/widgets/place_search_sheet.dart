@@ -55,6 +55,7 @@ class _PlaceSearchSheetState extends State<PlaceSearchSheet> {
   @override
   Widget build(BuildContext context) {
     final results = _results;
+    final scheme = Theme.of(context).colorScheme;
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final availableHeight = MediaQuery.sizeOf(context).height - keyboardInset;
 
@@ -121,7 +122,7 @@ class _PlaceSearchSheetState extends State<PlaceSearchSheet> {
                   textInputAction: TextInputAction.search,
                   onChanged: (value) => setState(() => _query = value),
                   decoration: InputDecoration(
-                    hintText: 'Название, АЗС, кафе, туалет…',
+                    hintText: 'Название, вода, АЗС, кафе, туалет…',
                     prefixIcon: const Icon(Icons.search_rounded),
                     suffixIcon: _query.isEmpty
                         ? null
@@ -134,7 +135,7 @@ class _PlaceSearchSheetState extends State<PlaceSearchSheet> {
                             icon: const Icon(Icons.cancel_rounded),
                           ),
                     filled: true,
-                    fillColor: const Color(0xFFF1F8F5),
+                    fillColor: scheme.surfaceContainerHighest,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(17),
                       borderSide: BorderSide.none,
@@ -243,6 +244,7 @@ class _SearchCategoryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: ChoiceChip(
@@ -254,14 +256,14 @@ class _SearchCategoryChip extends StatelessWidget {
         labelStyle: TextStyle(
           fontSize: 11.5,
           fontWeight: FontWeight.w800,
-          color: selected ? color : AppPalette.ink,
+          color: selected ? color : scheme.onSurface,
         ),
         selectedColor: color.withValues(alpha: 0.13),
-        backgroundColor: Colors.white,
+        backgroundColor: scheme.surface,
         side: BorderSide(
           color: selected
               ? color.withValues(alpha: 0.35)
-              : const Color(0xFFE4ECE9),
+              : scheme.outlineVariant,
         ),
       ),
     );
@@ -281,9 +283,11 @@ class _PlaceSearchTile extends StatelessWidget {
     final hasToilet = PlaceInfo.hasToilet(place);
     final feeKnown = place['fee_known'] == true;
     final isFree = place['is_free'] == true;
+    final drinkingWater = PlaceInfo.drinkingWater(place);
+    final scheme = Theme.of(context).colorScheme;
 
     return Material(
-      color: Colors.white,
+      color: scheme.surface,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         onTap: onTap,
@@ -291,7 +295,7 @@ class _PlaceSearchTile extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(11),
           decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFFE7EFEC)),
+            border: Border.all(color: scheme.outlineVariant),
             borderRadius: BorderRadius.circular(18),
           ),
           child: Row(
@@ -329,7 +333,7 @@ class _PlaceSearchTile extends StatelessWidget {
                         fontSize: 10.8,
                       ),
                     ),
-                    if (hasToilet || feeKnown) ...[
+                    if (hasToilet || feeKnown || kind == PlaceKind.water) ...[
                       const SizedBox(height: 6),
                       Wrap(
                         spacing: 5,
@@ -348,6 +352,15 @@ class _PlaceSearchTile extends StatelessWidget {
                               color: isFree
                                   ? AppPalette.emerald
                                   : AppPalette.sky,
+                            ),
+                          if (kind == PlaceKind.water)
+                            _MiniBadge(
+                              text: drinkingWater == true
+                                  ? 'Можно пить'
+                                  : 'Вода не проверена',
+                              color: drinkingWater == true
+                                  ? AppPalette.emerald
+                                  : Colors.orange,
                             ),
                         ],
                       ),

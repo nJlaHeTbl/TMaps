@@ -25,6 +25,14 @@ void main() {
       'lat': 45.001,
       'lng': 78.001,
     },
+    {
+      'name': 'Водомат',
+      'place_kind': 'water',
+      'water_type': 'vending_machine',
+      'has_toilet': false,
+      'lat': 45.03,
+      'lng': 78.03,
+    },
   ];
 
   test('понимает короткие названия категорий', () {
@@ -68,5 +76,16 @@ void main() {
 
     expect(results, hasLength(1));
     expect(results.single.place['name'], 'Бауырсак');
+  });
+
+  test('находит воду по разговорному названию', () {
+    final results = PlaceSearch.find(
+      places,
+      query: 'водомат',
+      origin: const LatLng(45, 78),
+    );
+
+    expect(results, hasLength(1));
+    expect(PlaceInfo.kindOf(results.single.place), PlaceKind.water);
   });
 }

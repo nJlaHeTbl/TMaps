@@ -34,6 +34,19 @@ void main() {
       matches({'place_kind': 'ev_charging', 'has_toilet': false}),
       isFalse,
     );
+    expect(matches({'place_kind': 'water', 'has_toilet': false}), isFalse);
+  });
+
+  test('вода появляется только в своей категории', () {
+    expect(
+      matches({
+        'place_kind': 'water',
+        'has_toilet': false,
+        'fee_known': true,
+        'is_free': true,
+      }, category: PlaceKind.water),
+      isTrue,
+    );
   });
 
   test('категория еды показывает именованные заведения', () {

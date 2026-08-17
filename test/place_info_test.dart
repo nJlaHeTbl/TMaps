@@ -12,12 +12,27 @@ void main() {
         'organization': PlaceKind.organization,
         'phone_charging': PlaceKind.phoneCharging,
         'ev_charging': PlaceKind.evCharging,
+        'water': PlaceKind.water,
       };
 
       for (final entry in categories.entries) {
         expect(PlaceInfo.kindOf({'place_kind': entry.key}), entry.value);
         expect(PlaceInfo.valueOfKind(entry.value), entry.key);
       }
+    });
+
+    test('water-only places are not treated as toilets', () {
+      expect(
+        PlaceInfo.hasToilet({'place_kind': 'water', 'has_toilet': false}),
+        isFalse,
+      );
+      expect(
+        PlaceInfo.waterTypeLabel({
+          'place_kind': 'water',
+          'water_type': 'vending_machine',
+        }),
+        'Автомат для набора воды',
+      );
     });
 
     test('charging-only places are not treated as toilets', () {
