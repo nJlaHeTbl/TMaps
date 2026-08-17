@@ -3,10 +3,12 @@ import 'package:latlong2/latlong.dart';
 
 import '../core/app_palette.dart';
 
-enum AddLocationMode { current, chooseOnMap }
+enum AddLocationMode { current, chooseOnMap, submissions }
 
 class AddLocationChoiceSheet extends StatelessWidget {
-  const AddLocationChoiceSheet({super.key});
+  const AddLocationChoiceSheet({super.key, this.submissionCount = 0});
+
+  final int submissionCount;
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +48,18 @@ class AddLocationChoiceSheet extends StatelessWidget {
               gradient: AppPalette.warmGradient,
               onTap: () => Navigator.pop(context, AddLocationMode.chooseOnMap),
             ),
+            const SizedBox(height: 12),
+            _LocationChoice(
+              icon: Icons.fact_check_rounded,
+              title: 'Мои заявки',
+              subtitle: submissionCount == 0
+                  ? 'Здесь появятся отправленные на проверку точки'
+                  : '$submissionCount на проверке · видно только на этом устройстве',
+              gradient: const LinearGradient(
+                colors: [Color(0xFF2563EB), Color(0xFF06B6D4)],
+              ),
+              onTap: () => Navigator.pop(context, AddLocationMode.submissions),
+            ),
           ],
         ),
       ),
@@ -70,8 +84,9 @@ class _LocationChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: Theme.of(context).colorScheme.surface,
+      color: scheme.surface,
       borderRadius: BorderRadius.circular(22),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -79,7 +94,7 @@ class _LocationChoice extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFFE2EEE8)),
+            border: Border.all(color: scheme.outlineVariant),
             borderRadius: BorderRadius.circular(22),
           ),
           child: Row(

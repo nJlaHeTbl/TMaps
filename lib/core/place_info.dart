@@ -59,8 +59,16 @@ class PlaceInfo {
     final existing = place['place_key']?.toString();
     if (existing != null && existing.isNotEmpty) return existing;
 
-    if (place['source'] == 'openstreetmap') {
-      return 'osm:${place['source_id']}';
+    final source = place['source']?.toString();
+    final sourceId = place['source_id']?.toString();
+    if (source == 'openstreetmap') {
+      return 'osm:$sourceId';
+    }
+    if (source == 'curated') {
+      return 'curated:$sourceId';
+    }
+    if (source == 'pending_submission') {
+      return 'pending:${place['submission_id'] ?? place['id']}';
     }
 
     return 'community:${place['id'] ?? '${place['lat']}:${place['lng']}'}';
@@ -82,6 +90,9 @@ class PlaceInfo {
   }
 
   static String kindLabel(Map<String, dynamic> place) {
+    if (place['submission_status'] == 'pending') {
+      return 'Моя заявка · ожидает проверки';
+    }
     return switch (kindOf(place)) {
       PlaceKind.cafe => 'Кафе или ресторан',
       PlaceKind.fuel => 'Автозаправочная станция',

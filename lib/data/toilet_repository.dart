@@ -23,7 +23,7 @@ class ToiletRepository {
     }
 
     final results = await Future.wait([
-      _fetchOpenStreetMapToilets(),
+      _fetchBundledPlaces(),
       safe(_fetchCommunityToilets()),
       safe(_fetchReports()),
       safe(_fetchVoteTotals()),
@@ -57,15 +57,21 @@ class ToiletRepository {
         .toList();
   }
 
-  Future<List<Map<String, dynamic>>> _fetchOpenStreetMapToilets() async {
-    final json = await rootBundle.loadString(
-      'assets/data/kazakhstan_toilets.json',
-    );
-    final payload = jsonDecode(json) as Map<String, dynamic>;
-    final places = (payload['places'] ?? payload['toilets']) as List<dynamic>;
-    return places
-        .map((toilet) => Map<String, dynamic>.from(toilet as Map))
-        .toList();
+  Future<List<Map<String, dynamic>>> _fetchBundledPlaces() async {
+    Future<List<Map<String, dynamic>>> load(String assetPath) async {
+      final json = await rootBundle.loadString(assetPath);
+      final payload = jsonDecode(json) as Map<String, dynamic>;
+      final places = (payload['places'] ?? payload['toilets']) as List<dynamic>;
+      return places
+          .map((place) => Map<String, dynamic>.from(place as Map))
+          .toList(growable: false);
+    }
+
+    final bundled = await Future.wait([
+      load('assets/data/kazakhstan_toilets.json'),
+      load('assets/data/curated_places.json'),
+    ]);
+    return [...bundled[1], ...bundled[0]];
   }
 
   Future<List<Map<String, dynamic>>> _fetchReports() async {

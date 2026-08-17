@@ -34,4 +34,18 @@ void main() {
       isNotEmpty,
     );
   });
+
+  test('curated Taldykorgan water points are bundled', () async {
+    final json = await rootBundle.loadString('assets/data/curated_places.json');
+    final payload = jsonDecode(json) as Map<String, dynamic>;
+    final places = payload['places'] as List<dynamic>;
+
+    expect(places, hasLength(payload['count'] as int));
+    expect(
+      places.where(
+        (place) => (place as Map<String, dynamic>)['place_kind'] == 'water',
+      ),
+      hasLength(8),
+    );
+  });
 }

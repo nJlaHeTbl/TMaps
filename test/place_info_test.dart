@@ -49,6 +49,27 @@ void main() {
       );
     });
 
+    test('uses stable keys for curated and pending places', () {
+      expect(
+        PlaceInfo.keyOf({'source': 'curated', 'source_id': '2gis/123'}),
+        'curated:2gis/123',
+      );
+      expect(
+        PlaceInfo.keyOf({'source': 'pending_submission', 'submission_id': 17}),
+        'pending:17',
+      );
+    });
+
+    test('labels a pending submission clearly', () {
+      expect(
+        PlaceInfo.kindLabel({
+          'place_kind': 'community_toilet',
+          'submission_status': 'pending',
+        }),
+        'Моя заявка · ожидает проверки',
+      );
+    });
+
     test('latest community report overrides imported amenities', () {
       final place = {
         'has_paper': false,

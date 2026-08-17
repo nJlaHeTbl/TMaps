@@ -22,6 +22,7 @@ import 'presentation/place_category_style.dart';
 import 'services/favorites_service.dart';
 import 'services/live_location_service.dart';
 import 'services/route_service.dart';
+import 'services/submission_history_service.dart';
 import 'services/theme_preference_service.dart';
 import 'widgets/map_overlays.dart';
 import 'widgets/place_search_sheet.dart';
@@ -115,6 +116,8 @@ class _HomePageState extends State<HomePage> {
   final MapController _mapController = MapController();
   final RouteService _routeService = const RouteService();
   final FavoritesService _favoritesService = const FavoritesService();
+  final SubmissionHistoryService _submissionHistoryService =
+      const SubmissionHistoryService();
   final LiveLocationService _locationService = LiveLocationService();
 
   late final ToiletRepository _toiletRepository;
@@ -132,6 +135,7 @@ class _HomePageState extends State<HomePage> {
   bool _isPickingLocation = false;
 
   final List<Map<String, dynamic>> toilets = [];
+  List<TrackedSubmission> _submissionHistory = const [];
   Set<String> _favoritePlaceKeys = const {};
 
   String? username;
@@ -154,8 +158,39 @@ class _HomePageState extends State<HomePage> {
   double? routeDistance;
   double? routeDuration;
 
+  Map<String, dynamic> _submissionToPlace(TrackedSubmission submission) {
+    final kind = submission.placeKind;
+    return <String, dynamic>{
+      'id': 'submission_${submission.id}',
+      'submission_id': submission.id,
+      'submission_status': submission.status,
+      'lat': submission.latitude,
+      'lng': submission.longitude,
+      'username': submission.username,
+      'name': 'Моя заявка #${submission.id}',
+      'place_kind': kind,
+      'has_toilet': kind == 'community_toilet',
+      'access_type': 'public',
+      'is_free': submission.isFree,
+      'fee_known': true,
+      'cleanliness': submission.cleanliness,
+      'condition': submission.condition,
+      'comment': submission.comment,
+      'source': 'pending_submission',
+      'created_at': submission.createdAt.toIso8601String(),
+    };
+  }
+
+  List<Map<String, dynamic>> get _pendingSubmissionPlaces =>
+      _submissionHistory.map(_submissionToPlace).toList(growable: false);
+
+  List<Map<String, dynamic>> get allPlaces => [
+    ..._pendingSubmissionPlaces,
+    ...toilets,
+  ];
+
   List<Map<String, dynamic>> get visibleToilets {
-    return toilets
+    return allPlaces
         .where(
           (place) => PlaceVisibilityPolicy.matches(
             place,
@@ -215,7 +250,7 @@ class _HomePageState extends State<HomePage> {
       !showPhoneCharging ||
       !showEvCharging;
 
-  List<Map<String, dynamic>> get favoritePlaces => toilets
+  List<Map<String, dynamic>> get favoritePlaces => allPlaces
       .where((place) => _favoritePlaceKeys.contains(PlaceInfo.keyOf(place)))
       .toList(growable: false);
 
@@ -229,6 +264,7 @@ class _HomePageState extends State<HomePage> {
 
     loadUsername();
     unawaited(_loadFavorites());
+    unawaited(_loadSubmissionHistory());
     unawaited(_startLocation(requestPermission: false));
     loadToilets();
   }
@@ -271,6 +307,12 @@ class _HomePageState extends State<HomePage> {
     final savedKeys = await _favoritesService.load();
     if (!mounted) return;
     setState(() => _favoritePlaceKeys = savedKeys);
+  }
+
+  Future<void> _loadSubmissionHistory() async {
+    final submissions = await _submissionHistoryService.load();
+    if (!mounted) return;
+    setState(() => _submissionHistory = submissions);
   }
 
   bool _isFavorite(Map<String, dynamic> place) {
@@ -484,7 +526,7 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      final availableToilets = toilets
+      final availableToilets = allPlaces
           .where(
             (place) => PlaceVisibilityPolicy.matches(
               place,
@@ -565,7 +607,7 @@ class _HomePageState extends State<HomePage> {
       ),
       clipBehavior: Clip.antiAlias,
       builder: (context) =>
-          PlaceSearchSheet(places: toilets, origin: camera.center),
+          PlaceSearchSheet(places: allPlaces, origin: camera.center),
     );
 
     if (place == null || !mounted) return;
@@ -620,6 +662,52 @@ class _HomePageState extends State<HomePage> {
 
     await Future<void>.delayed(const Duration(milliseconds: 320));
     if (mounted) showToiletInfo(place);
+  }
+
+  void _selectMapCategory(PlaceKind? kind) {
+    setState(() => selectedCategory = kind);
+    if (kind != PlaceKind.water) return;
+
+    final cameraCenter = _mapController.camera.center;
+    final nearbyWater = allPlaces
+        .where((place) {
+          if (PlaceInfo.kindOf(place) != PlaceKind.water) return false;
+          final distance = Geolocator.distanceBetween(
+            cameraCenter.latitude,
+            cameraCenter.longitude,
+            (place['lat'] as num).toDouble(),
+            (place['lng'] as num).toDouble(),
+          );
+          return distance <= 25000;
+        })
+        .toList(growable: false);
+
+    if (nearbyWater.isEmpty) return;
+
+    var minLat = double.infinity;
+    var maxLat = -double.infinity;
+    var minLng = double.infinity;
+    var maxLng = -double.infinity;
+    for (final place in nearbyWater) {
+      final lat = (place['lat'] as num).toDouble();
+      final lng = (place['lng'] as num).toDouble();
+      minLat = min(minLat, lat);
+      maxLat = max(maxLat, lat);
+      minLng = min(minLng, lng);
+      maxLng = max(maxLng, lng);
+    }
+
+    final span = max(maxLat - minLat, maxLng - minLng);
+    final zoom = switch (span) {
+      > 0.06 => 13.9,
+      > 0.035 => 14.45,
+      > 0.018 => 15.0,
+      _ => 15.7,
+    };
+    _mapController.move(
+      LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2),
+      zoom,
+    );
   }
 
   Future<void> showFilters() async {
@@ -860,6 +948,21 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> showSubmissionHistory() async {
+    final selected = await showModalBottomSheet<TrackedSubmission>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _SubmissionHistorySheet(
+        submissions: _submissionHistory,
+        onSelect: (submission) => Navigator.of(context).pop(submission),
+      ),
+    );
+
+    if (selected == null || !mounted) return;
+    await _focusOnPlace(_submissionToPlace(selected));
+  }
+
   // =========================================================
   // ДОБАВЛЕНИЕ ТУАЛЕТА
   // =========================================================
@@ -876,9 +979,15 @@ class _HomePageState extends State<HomePage> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => const AddLocationChoiceSheet(),
+      builder: (_) =>
+          AddLocationChoiceSheet(submissionCount: _submissionHistory.length),
     );
     if (!mounted || mode == null) return;
+
+    if (mode == AddLocationMode.submissions) {
+      await showSubmissionHistory();
+      return;
+    }
 
     if (mode == AddLocationMode.current) {
       setState(() => isAddingToilet = true);
@@ -999,7 +1108,31 @@ class _HomePageState extends State<HomePage> {
         comment: comment.trim().isEmpty ? null : comment.trim(),
       );
 
+      final trackedSubmission = TrackedSubmission(
+        id: submissionId,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        username: username!,
+        placeKind: PlaceInfo.valueOfKind(placeKind),
+        isFree: isFree,
+        cleanliness: cleanliness,
+        condition: condition,
+        comment: comment.trim().isEmpty ? null : comment.trim(),
+        createdAt: DateTime.now().toUtc(),
+      );
+      final submissionHistory = await _submissionHistoryService.record(
+        trackedSubmission,
+      );
+
       if (!mounted) return;
+
+      setState(() {
+        _submissionHistory = submissionHistory;
+        selectedCategory = placeKind == PlaceKind.communityToilet
+            ? null
+            : placeKind;
+      });
+      _mapController.move(position, max(_mapZoom, 16.8));
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1010,7 +1143,11 @@ class _HomePageState extends State<HomePage> {
           ),
           content: Text(
             'Заявка #$submissionId отправлена. '
-            'Место появится после проверки.',
+            'Ты уже видишь её на карте, остальные — после проверки.',
+          ),
+          action: SnackBarAction(
+            label: 'Мои заявки',
+            onPressed: () => unawaited(showSubmissionHistory()),
           ),
         ),
       );
@@ -1088,6 +1225,7 @@ class _HomePageState extends State<HomePage> {
           title: PlaceInfo.titleOf(toilet),
           kindLabel: PlaceInfo.kindLabel(toilet),
           placeKind: PlaceInfo.kindOf(toilet),
+          isPending: toilet['submission_status'] == 'pending',
           accessLabel: PlaceInfo.accessLabel(toilet),
           hasToilet: PlaceInfo.hasToilet(toilet),
           author: author,
@@ -1499,21 +1637,21 @@ class _HomePageState extends State<HomePage> {
                 colorFilter: ColorFilter.matrix(
                   isDark
                       ? const [
-                          -0.13,
-                          -0.44,
+                          -0.14,
+                          -0.14,
+                          -0.07,
+                          0,
+                          165,
+                          -0.10,
+                          -0.20,
                           -0.05,
                           0,
-                          170,
+                          178,
+                          -0.10,
                           -0.13,
-                          -0.44,
-                          -0.05,
+                          -0.10,
                           0,
                           180,
-                          -0.13,
-                          -0.44,
-                          -0.05,
-                          0,
-                          175,
                           0,
                           0,
                           0,
@@ -1627,6 +1765,8 @@ class _HomePageState extends State<HomePage> {
                               isFree: isFree,
                               feeKnown: feeKnown,
                               placeKind: placeKind,
+                              isPending:
+                                  toilet['submission_status'] == 'pending',
                             ),
                           ),
                         ),
@@ -1690,9 +1830,7 @@ class _HomePageState extends State<HomePage> {
                   padding: const EdgeInsets.fromLTRB(14, 88, 14, 0),
                   child: _MapLegendBar(
                     selectedKind: selectedCategory,
-                    onSelected: (kind) {
-                      setState(() => selectedCategory = kind);
-                    },
+                    onSelected: _selectMapCategory,
                   ),
                 ),
               ),
@@ -2462,39 +2600,49 @@ class _PlaceMarker extends StatelessWidget {
   final bool isFree;
   final bool feeKnown;
   final PlaceKind placeKind;
+  final bool isPending;
 
   const _PlaceMarker({
     required this.isFree,
     required this.feeKnown,
     required this.placeKind,
+    this.isPending = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final (color, icon) = switch (placeKind) {
-      PlaceKind.communityToilet || PlaceKind.publicToilet => (
-        _toiletFeeColor(feeKnown: feeKnown, isFree: isFree),
-        Icons.wc_rounded,
-      ),
-      PlaceKind.phoneCharging => (
-        const Color(0xFF2563EB),
-        Icons.battery_charging_full_rounded,
-      ),
-      PlaceKind.evCharging => (
-        const Color(0xFF0891B2),
-        Icons.ev_station_rounded,
-      ),
-      PlaceKind.water => (const Color(0xFF0284C7), Icons.water_drop_rounded),
-      PlaceKind.cafe => (const Color(0xFFEA580C), Icons.restaurant_rounded),
-      PlaceKind.fuel => (
-        const Color(0xFF7C3AED),
-        Icons.local_gas_station_rounded,
-      ),
-      PlaceKind.organization => (
-        const Color(0xFF0F766E),
-        Icons.apartment_rounded,
-      ),
-    };
+    final (color, icon) = isPending
+        ? (const Color(0xFFF59E0B), Icons.hourglass_top_rounded)
+        : switch (placeKind) {
+            PlaceKind.communityToilet || PlaceKind.publicToilet => (
+              _toiletFeeColor(feeKnown: feeKnown, isFree: isFree),
+              Icons.wc_rounded,
+            ),
+            PlaceKind.phoneCharging => (
+              const Color(0xFF2563EB),
+              Icons.battery_charging_full_rounded,
+            ),
+            PlaceKind.evCharging => (
+              const Color(0xFF0891B2),
+              Icons.ev_station_rounded,
+            ),
+            PlaceKind.water => (
+              const Color(0xFF0284C7),
+              Icons.water_drop_rounded,
+            ),
+            PlaceKind.cafe => (
+              const Color(0xFFEA580C),
+              Icons.restaurant_rounded,
+            ),
+            PlaceKind.fuel => (
+              const Color(0xFF7C3AED),
+              Icons.local_gas_station_rounded,
+            ),
+            PlaceKind.organization => (
+              const Color(0xFF0F766E),
+              Icons.apartment_rounded,
+            ),
+          };
 
     return Column(
       children: [
@@ -2518,7 +2666,7 @@ class _PlaceMarker extends StatelessWidget {
               ),
               child: Icon(icon, color: Colors.white, size: 26),
             ),
-            if (placeKind == PlaceKind.communityToilet)
+            if (isPending || placeKind == PlaceKind.communityToilet)
               Positioned(
                 top: -3,
                 right: -3,
@@ -2526,12 +2674,14 @@ class _PlaceMarker extends StatelessWidget {
                   width: 20,
                   height: 20,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFDB2777),
+                    color: isPending
+                        ? const Color(0xFF2563EB)
+                        : const Color(0xFFDB2777),
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 2),
                   ),
-                  child: const Icon(
-                    Icons.groups_rounded,
+                  child: Icon(
+                    isPending ? Icons.schedule_rounded : Icons.groups_rounded,
                     color: Colors.white,
                     size: 12,
                   ),
@@ -2966,6 +3116,7 @@ class _ToiletInfoSheet extends StatelessWidget {
   final String title;
   final String kindLabel;
   final PlaceKind placeKind;
+  final bool isPending;
   final String accessLabel;
   final bool hasToilet;
   final String author;
@@ -2999,6 +3150,7 @@ class _ToiletInfoSheet extends StatelessWidget {
     required this.title,
     required this.kindLabel,
     required this.placeKind,
+    required this.isPending,
     required this.accessLabel,
     required this.hasToilet,
     required this.author,
@@ -3172,6 +3324,39 @@ class _ToiletInfoSheet extends StatelessWidget {
                 ),
 
                 const SizedBox(height: 22),
+
+                if (isPending) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.13),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(
+                          Icons.hourglass_top_rounded,
+                          color: Color(0xFFD97706),
+                        ),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Заявка отправлена. Пока точку видишь только ты на этом устройстве; после одобрения она появится у всех.',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
 
                 // Информация
                 if (isWater) ...[
@@ -3452,57 +3637,61 @@ class _ToiletInfoSheet extends StatelessWidget {
                   ),
                 ],
 
-                const SizedBox(height: 20),
+                if (!isPending) ...[
+                  const SizedBox(height: 20),
 
-                const Text(
-                  'Точка актуальна?',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: isSubmittingVote ? null : () => onVote(true),
-                        icon: const Icon(Icons.thumb_up_alt_rounded),
-                        label: Text('Да · $likes'),
-                        style: FilledButton.styleFrom(
-                          foregroundColor: const Color(0xFF15803D),
-                          backgroundColor: const Color(0xFFDCFCE7),
+                  const Text(
+                    'Точка актуальна?',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.tonalIcon(
+                          onPressed: isSubmittingVote
+                              ? null
+                              : () => onVote(true),
+                          icon: const Icon(Icons.thumb_up_alt_rounded),
+                          label: Text('Да · $likes'),
+                          style: FilledButton.styleFrom(
+                            foregroundColor: const Color(0xFF15803D),
+                            backgroundColor: const Color(0xFFDCFCE7),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: isSubmittingVote
-                            ? null
-                            : () => onVote(false),
-                        icon: const Icon(Icons.report_problem_rounded),
-                        label: Text('Проблема · $dislikes'),
-                        style: FilledButton.styleFrom(
-                          foregroundColor: const Color(0xFFB45309),
-                          backgroundColor: const Color(0xFFFFF7ED),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton.tonalIcon(
+                          onPressed: isSubmittingVote
+                              ? null
+                              : () => onVote(false),
+                          icon: const Icon(Icons.report_problem_rounded),
+                          label: Text('Проблема · $dislikes'),
+                          style: FilledButton.styleFrom(
+                            foregroundColor: const Color(0xFFB45309),
+                            backgroundColor: const Color(0xFFFFF7ED),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  if (!isWater) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: isSubmittingReport ? null : onReport,
+                        icon: const Icon(Icons.rate_review_outlined),
+                        label: Text(
+                          reportCount == 0
+                              ? 'Обновить информацию или оставить отзыв'
+                              : 'Отзывы и обновления: $reportCount · Добавить',
                         ),
                       ),
                     ),
                   ],
-                ),
-
-                if (!isWater) ...[
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: isSubmittingReport ? null : onReport,
-                      icon: const Icon(Icons.rate_review_outlined),
-                      label: Text(
-                        reportCount == 0
-                            ? 'Обновить информацию или оставить отзыв'
-                            : 'Отзывы и обновления: $reportCount · Добавить',
-                      ),
-                    ),
-                  ),
                 ],
 
                 const SizedBox(height: 12),
@@ -4099,6 +4288,215 @@ class _TriStateField extends StatelessWidget {
   }
 }
 
+class _SubmissionHistorySheet extends StatelessWidget {
+  const _SubmissionHistorySheet({
+    required this.submissions,
+    required this.onSelect,
+  });
+
+  final List<TrackedSubmission> submissions;
+  final ValueChanged<TrackedSubmission> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 680),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 26),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2563EB).withValues(alpha: 0.13),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(
+                      Icons.fact_check_rounded,
+                      color: Color(0xFF2563EB),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Мои заявки',
+                          style: TextStyle(
+                            fontSize: 23,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(height: 3),
+                        Text(
+                          'Точки, отправленные с этого устройства',
+                          style: TextStyle(color: AppPalette.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded, color: Color(0xFFD97706)),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'На проверке точку видишь только ты. После одобрения она станет общей и появится у всех.',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (submissions.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 22,
+                    vertical: 30,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: scheme.outlineVariant),
+                  ),
+                  child: const Column(
+                    children: [
+                      Icon(
+                        Icons.add_location_alt_outlined,
+                        size: 38,
+                        color: AppPalette.muted,
+                      ),
+                      SizedBox(height: 10),
+                      Text(
+                        'Пока заявок нет',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      SizedBox(height: 5),
+                      Text(
+                        'Нажми зелёный плюс, выбери точку и отправь её на проверку.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: AppPalette.muted),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ...submissions.map((submission) {
+                  final date = submission.createdAt.toLocal();
+                  final place = <String, dynamic>{
+                    'place_kind': submission.placeKind,
+                  };
+                  final categoryTitle = switch (PlaceInfo.kindOf(place)) {
+                    PlaceKind.phoneCharging => 'Зарядка телефона',
+                    PlaceKind.evCharging => 'Электрозарядка',
+                    _ => 'Новый туалет',
+                  };
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Material(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(20),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: () => onSelect(submission),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 46,
+                                height: 46,
+                                decoration: BoxDecoration(
+                                  color: const Color(
+                                    0xFFF59E0B,
+                                  ).withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                                child: const Icon(
+                                  Icons.hourglass_top_rounded,
+                                  color: Color(0xFFD97706),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '$categoryTitle #${submission.id}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Ожидает проверки · '
+                                      '${date.day.toString().padLeft(2, '0')}.'
+                                      '${date.month.toString().padLeft(2, '0')}.'
+                                      '${date.year}',
+                                      style: const TextStyle(
+                                        color: Color(0xFFD97706),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      '${submission.latitude.toStringAsFixed(5)}, '
+                                      '${submission.longitude.toStringAsFixed(5)}',
+                                      style: const TextStyle(
+                                        color: AppPalette.muted,
+                                        fontSize: 11.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(
+                                Icons.chevron_right_rounded,
+                                color: AppPalette.muted,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // =============================================================
 // ФОРМА ДОБАВЛЕНИЯ
 // =============================================================
@@ -4138,6 +4536,7 @@ class _AddToiletSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final isToilet = placeKind == PlaceKind.communityToilet;
     final (placeIcon, placeColor, placeTitle) = switch (placeKind) {
       PlaceKind.phoneCharging => (
@@ -4157,7 +4556,7 @@ class _AddToiletSheet extends StatelessWidget {
       child: Container(
         constraints: const BoxConstraints(maxHeight: 700),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
+          color: scheme.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
         ),
         child: SingleChildScrollView(
@@ -4226,7 +4625,7 @@ class _AddToiletSheet extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(5),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F3),
+                  color: scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(17),
                 ),
                 child: Row(
@@ -4276,7 +4675,7 @@ class _AddToiletSheet extends StatelessWidget {
 
               Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF7F8FA),
+                  color: scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(16),
                 ),
                 padding: const EdgeInsets.all(5),
@@ -4503,13 +4902,14 @@ class _ChoiceButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 8),
         decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.transparent,
+          color: selected ? scheme.surface : Colors.transparent,
           borderRadius: BorderRadius.circular(13),
           boxShadow: selected
               ? [
@@ -4527,7 +4927,7 @@ class _ChoiceButton extends StatelessWidget {
             Icon(
               icon,
               size: 19,
-              color: selected ? color : Colors.grey.shade500,
+              color: selected ? color : scheme.onSurfaceVariant,
             ),
             const SizedBox(width: 6),
             Flexible(
@@ -4537,7 +4937,7 @@ class _ChoiceButton extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w800,
-                  color: selected ? Colors.black87 : Colors.grey.shade600,
+                  color: selected ? scheme.onSurface : scheme.onSurfaceVariant,
                 ),
               ),
             ),

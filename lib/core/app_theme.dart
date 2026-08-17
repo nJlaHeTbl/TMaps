@@ -107,23 +107,23 @@ abstract final class AppTheme {
         ColorScheme.fromSeed(
           seedColor: AppPalette.emerald,
           brightness: Brightness.dark,
-          surface: const Color(0xFF101C19),
+          surface: const Color(0xFF1B2927),
         ).copyWith(
           primary: AppPalette.mint,
           secondary: AppPalette.aqua,
           tertiary: const Color(0xFFA78BFA),
           onPrimary: const Color(0xFF052018),
-          surface: const Color(0xFF101C19),
+          surface: const Color(0xFF1B2927),
           onSurface: const Color(0xFFE7F4EE),
-          surfaceContainerHighest: const Color(0xFF21332D),
-          outlineVariant: const Color(0xFF314840),
+          surfaceContainerHighest: const Color(0xFF2A3A37),
+          outlineVariant: const Color(0xFF425551),
         );
 
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: const Color(0xFF07110E),
+      scaffoldBackgroundColor: const Color(0xFF15201F),
       fontFamily: 'Roboto',
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
@@ -131,7 +131,7 @@ abstract final class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: const Color(0xFF1A2A25),
+        fillColor: const Color(0xFF243431),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 16,
@@ -147,11 +147,11 @@ abstract final class AppTheme {
         ),
       ),
       cardTheme: CardThemeData(
-        color: const Color(0xFF13221D),
+        color: const Color(0xFF21312E),
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(22),
-          side: const BorderSide(color: Color(0xFF2A4038)),
+          side: const BorderSide(color: Color(0xFF3B4E49)),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -169,7 +169,7 @@ abstract final class AppTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: const Color(0xFFE7F4EE),
           minimumSize: const Size(0, 52),
-          side: const BorderSide(color: Color(0xFF385148)),
+          side: const BorderSide(color: Color(0xFF4B625D)),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -181,29 +181,29 @@ abstract final class AppTheme {
         foregroundColor: Colors.white,
       ),
       bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: Color(0xFF101C19),
-        modalBackgroundColor: Color(0xFF101C19),
+        backgroundColor: Color(0xFF1B2927),
+        modalBackgroundColor: Color(0xFF1B2927),
         showDragHandle: true,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
         ),
       ),
       dialogTheme: const DialogThemeData(
-        backgroundColor: Color(0xFF101C19),
+        backgroundColor: Color(0xFF1B2927),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(28)),
         ),
       ),
-      popupMenuTheme: const PopupMenuThemeData(color: Color(0xFF172621)),
+      popupMenuTheme: const PopupMenuThemeData(color: Color(0xFF243431)),
       snackBarTheme: const SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: Color(0xFF20332C),
+        backgroundColor: Color(0xFF2B3C38),
         contentTextStyle: TextStyle(color: Color(0xFFE7F4EE)),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(14)),
         ),
       ),
-      dividerTheme: const DividerThemeData(color: Color(0xFF2A4038)),
+      dividerTheme: const DividerThemeData(color: Color(0xFF425551)),
     );
   }
 
