@@ -3,7 +3,9 @@ import 'place_info.dart';
 abstract final class PlaceVisibilityPolicy {
   static bool matches(
     Map<String, dynamic> place, {
-    required PlaceKind? selectedCategory,
+    required bool showAllCategories,
+    required bool showToiletPlaces,
+    required Set<PlaceKind> selectedCategories,
     required bool freeOnly,
     required bool wheelchairOnly,
     required bool communityOnly,
@@ -14,9 +16,11 @@ abstract final class PlaceVisibilityPolicy {
     final kind = PlaceInfo.kindOf(place);
     final hasToilet = PlaceInfo.hasToilet(place);
 
-    // TMaps opens as a toilet map. Other useful categories are one tap away.
-    if (selectedCategory == null && !hasToilet) return false;
-    if (selectedCategory != null && kind != selectedCategory) return false;
+    final matchesSelectedCategory =
+        showAllCategories ||
+        (showToiletPlaces && hasToilet) ||
+        selectedCategories.contains(kind);
+    if (!matchesSelectedCategory) return false;
 
     // Unnamed, unconfirmed food nodes are not useful enough to occupy the map.
     if (kind == PlaceKind.cafe && !hasToilet && !_hasUsefulName(place)) {

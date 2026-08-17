@@ -151,7 +151,10 @@ class _HomePageState extends State<HomePage> {
   bool showVenueToilets = true;
   bool showPhoneCharging = true;
   bool showEvCharging = true;
-  PlaceKind? selectedCategory;
+  bool showAllCategories = false;
+  bool showToiletPlaces = true;
+  Set<PlaceKind> selectedCategories = <PlaceKind>{};
+  int _mapAnimationGeneration = 0;
 
   List<LatLng> routePoints = [];
 
@@ -194,7 +197,9 @@ class _HomePageState extends State<HomePage> {
         .where(
           (place) => PlaceVisibilityPolicy.matches(
             place,
-            selectedCategory: selectedCategory,
+            showAllCategories: showAllCategories,
+            showToiletPlaces: showToiletPlaces,
+            selectedCategories: selectedCategories,
             freeOnly: showFreeOnly,
             wheelchairOnly: showWheelchairOnly,
             communityOnly: showCommunityOnly,
@@ -234,15 +239,43 @@ class _HomePageState extends State<HomePage> {
       visibleToilets.isNotEmpty &&
       !_isPickingLocation;
 
-  String get _mapScopeLabel =>
-      selectedCategory == null ? 'Туалеты' : selectedCategory!.shortLabel;
+  int get _selectedCategoryCount =>
+      (showToiletPlaces ? 1 : 0) + selectedCategories.length;
 
-  String get _mapSummary => selectedCategory == null
-      ? '${visibleToilets.length} туалетов по Казахстану'
-      : '${visibleToilets.length} мест • ${selectedCategory!.shortLabel}';
+  String get _mapScopeLabel {
+    if (showAllCategories) return 'Все места';
+    final labels = <String>[
+      if (showToiletPlaces) 'Туалеты',
+      ...selectedCategories.map((kind) => kind.shortLabel),
+    ];
+    if (labels.length <= 2) return labels.join(' + ');
+    return '${labels.length} категории';
+  }
+
+  String get _mapSummary => showAllCategories
+      ? '${visibleToilets.length} мест • все категории'
+      : '${visibleToilets.length} мест • $_mapScopeLabel';
+
+  IconData get _clusterIcon {
+    if (showAllCategories || _selectedCategoryCount != 1) {
+      return Icons.layers_rounded;
+    }
+    if (showToiletPlaces) return Icons.wc_rounded;
+    return selectedCategories.single.icon;
+  }
+
+  Color get _clusterColor {
+    if (showAllCategories || _selectedCategoryCount != 1) {
+      return AppPalette.aqua;
+    }
+    if (showToiletPlaces) return AppPalette.emerald;
+    return selectedCategories.single.color;
+  }
 
   bool get filtersActive =>
-      selectedCategory != null ||
+      showAllCategories ||
+      !showToiletPlaces ||
+      selectedCategories.isNotEmpty ||
       showFreeOnly ||
       showWheelchairOnly ||
       showCommunityOnly ||
@@ -530,7 +563,9 @@ class _HomePageState extends State<HomePage> {
           .where(
             (place) => PlaceVisibilityPolicy.matches(
               place,
-              selectedCategory: null,
+              showAllCategories: false,
+              showToiletPlaces: true,
+              selectedCategories: const <PlaceKind>{},
               freeOnly: showFreeOnly,
               wheelchairOnly: showWheelchairOnly,
               communityOnly: showCommunityOnly,
@@ -651,23 +686,74 @@ class _HomePageState extends State<HomePage> {
       (place['lng'] as num).toDouble(),
     );
 
+    final isToiletCategory =
+        kind == PlaceKind.publicToilet || kind == PlaceKind.communityToilet;
     setState(() {
-      selectedCategory = switch (kind) {
-        PlaceKind.publicToilet || PlaceKind.communityToilet => null,
-        _ => kind,
-      };
+      showAllCategories = false;
+      showToiletPlaces = isToiletCategory;
+      selectedCategories = isToiletCategory ? <PlaceKind>{} : {kind};
       _followUser = false;
     });
-    _mapController.move(point, max(_mapZoom, 16.8));
+    await _animateMapTo(point, max(_mapZoom, 16.8));
 
-    await Future<void>.delayed(const Duration(milliseconds: 320));
+    await Future<void>.delayed(const Duration(milliseconds: 80));
     if (mounted) showToiletInfo(place);
   }
 
-  void _selectMapCategory(PlaceKind? kind) {
-    setState(() => selectedCategory = kind);
-    if (kind != PlaceKind.water) return;
+  void _showAllMapCategories() {
+    setState(() {
+      showAllCategories = true;
+      showToiletPlaces = false;
+      selectedCategories = <PlaceKind>{};
+    });
+  }
 
+  void _toggleToiletCategory() {
+    setState(() {
+      if (showAllCategories) {
+        showAllCategories = false;
+        showToiletPlaces = true;
+        selectedCategories = <PlaceKind>{};
+        return;
+      }
+
+      showToiletPlaces = !showToiletPlaces;
+      if (!showToiletPlaces && selectedCategories.isEmpty) {
+        showAllCategories = true;
+      }
+    });
+  }
+
+  void _toggleMapCategory(PlaceKind kind) {
+    var wasEnabled = false;
+    setState(() {
+      if (showAllCategories) {
+        showAllCategories = false;
+        showToiletPlaces = false;
+        selectedCategories = {kind};
+        wasEnabled = true;
+        return;
+      }
+
+      final updated = Set<PlaceKind>.of(selectedCategories);
+      if (updated.remove(kind)) {
+        wasEnabled = false;
+      } else {
+        updated.add(kind);
+        wasEnabled = true;
+      }
+      selectedCategories = updated;
+      if (!showToiletPlaces && selectedCategories.isEmpty) {
+        showAllCategories = true;
+      }
+    });
+
+    if (wasEnabled && kind == PlaceKind.water) {
+      unawaited(_focusNearbyWater());
+    }
+  }
+
+  Future<void> _focusNearbyWater() async {
     final cameraCenter = _mapController.camera.center;
     final nearbyWater = allPlaces
         .where((place) {
@@ -704,14 +790,37 @@ class _HomePageState extends State<HomePage> {
       > 0.018 => 15.0,
       _ => 15.7,
     };
-    _mapController.move(
+    await _animateMapTo(
       LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2),
       zoom,
     );
   }
 
+  Future<void> _animateMapTo(LatLng target, double zoom) async {
+    final generation = ++_mapAnimationGeneration;
+    final camera = _mapController.camera;
+    final startCenter = camera.center;
+    final startZoom = camera.zoom;
+    const frames = 18;
+
+    for (var frame = 1; frame <= frames; frame++) {
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      if (!mounted || generation != _mapAnimationGeneration) return;
+      final progress = Curves.easeOutCubic.transform(frame / frames);
+      _mapController.move(
+        LatLng(
+          ui.lerpDouble(startCenter.latitude, target.latitude, progress)!,
+          ui.lerpDouble(startCenter.longitude, target.longitude, progress)!,
+        ),
+        ui.lerpDouble(startZoom, zoom, progress)!,
+      );
+    }
+  }
+
   Future<void> showFilters() async {
-    var category = selectedCategory;
+    var allCategories = showAllCategories;
+    var toiletPlaces = showToiletPlaces;
+    var categories = Set<PlaceKind>.of(selectedCategories);
     var freeOnly = showFreeOnly;
     var wheelchairOnly = showWheelchairOnly;
     var communityOnly = showCommunityOnly;
@@ -740,7 +849,12 @@ class _HomePageState extends State<HomePage> {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Выбирай сразу несколько категорий — например, туалеты и питьевую воду.',
+                      style: TextStyle(color: AppPalette.muted, height: 1.35),
+                    ),
+                    const SizedBox(height: 14),
                     const Text(
                       'Что показать',
                       style: TextStyle(fontWeight: FontWeight.w900),
@@ -751,12 +865,36 @@ class _HomePageState extends State<HomePage> {
                       runSpacing: 8,
                       children: [
                         _FilterCategoryChip(
+                          label: 'Все места',
+                          icon: Icons.layers_rounded,
+                          color: AppPalette.aqua,
+                          selected: allCategories,
+                          onSelected: () {
+                            setSheetState(() {
+                              allCategories = true;
+                              toiletPlaces = false;
+                              categories.clear();
+                            });
+                          },
+                        ),
+                        _FilterCategoryChip(
                           label: 'Все туалеты',
                           icon: Icons.wc_rounded,
                           color: green,
-                          selected: category == null,
+                          selected: !allCategories && toiletPlaces,
                           onSelected: () {
-                            setSheetState(() => category = null);
+                            setSheetState(() {
+                              if (allCategories) {
+                                allCategories = false;
+                                toiletPlaces = true;
+                                categories.clear();
+                                return;
+                              }
+                              toiletPlaces = !toiletPlaces;
+                              if (!toiletPlaces && categories.isEmpty) {
+                                allCategories = true;
+                              }
+                            });
                           },
                         ),
                         ...PlaceKind.values.map(
@@ -764,9 +902,25 @@ class _HomePageState extends State<HomePage> {
                             label: kind.shortLabel,
                             icon: kind.icon,
                             color: kind.color,
-                            selected: category == kind,
+                            selected:
+                                !allCategories && categories.contains(kind),
                             onSelected: () {
-                              setSheetState(() => category = kind);
+                              setSheetState(() {
+                                if (allCategories) {
+                                  allCategories = false;
+                                  toiletPlaces = false;
+                                  categories = {kind};
+                                  return;
+                                }
+                                final updated = Set<PlaceKind>.of(categories);
+                                if (!updated.remove(kind)) {
+                                  updated.add(kind);
+                                }
+                                categories = updated;
+                                if (!toiletPlaces && categories.isEmpty) {
+                                  allCategories = true;
+                                }
+                              });
                             },
                           ),
                         ),
@@ -839,28 +993,35 @@ class _HomePageState extends State<HomePage> {
                     Row(
                       children: [
                         Expanded(
-                          child: OutlinedButton(
+                          child: OutlinedButton.icon(
                             onPressed: () {
-                              setSheetState(() {
-                                category = null;
-                                freeOnly = false;
-                                wheelchairOnly = false;
-                                communityOnly = false;
-                                venueToilets = true;
-                                phoneCharging = true;
-                                evCharging = true;
+                              setState(() {
+                                showAllCategories = true;
+                                showToiletPlaces = false;
+                                selectedCategories = <PlaceKind>{};
+                                showFreeOnly = false;
+                                showWheelchairOnly = false;
+                                showCommunityOnly = false;
+                                showVenueToilets = true;
+                                showPhoneCharging = true;
+                                showEvCharging = true;
                               });
+                              Navigator.of(context).pop();
                             },
-                            child: const Text('Сбросить'),
+                            icon: const Icon(Icons.layers_clear_rounded),
+                            label: const Text('Показать всё'),
                           ),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          flex: 2,
                           child: FilledButton(
                             onPressed: () {
                               setState(() {
-                                selectedCategory = category;
+                                showAllCategories = allCategories;
+                                showToiletPlaces = toiletPlaces;
+                                selectedCategories = Set<PlaceKind>.of(
+                                  categories,
+                                );
                                 showFreeOnly = freeOnly;
                                 showWheelchairOnly = wheelchairOnly;
                                 showCommunityOnly = communityOnly;
@@ -1144,11 +1305,12 @@ class _HomePageState extends State<HomePage> {
 
       setState(() {
         _submissionHistory = submissionHistory;
-        selectedCategory = placeKind == PlaceKind.communityToilet
-            ? null
-            : placeKind;
+        showAllCategories = false;
+        showToiletPlaces = placeKind == PlaceKind.communityToilet;
+        selectedCategories = showToiletPlaces ? <PlaceKind>{} : {placeKind};
       });
-      _mapController.move(position, max(_mapZoom, 16.8));
+      await _animateMapTo(position, max(_mapZoom, 16.8));
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1582,15 +1744,18 @@ class _HomePageState extends State<HomePage> {
     final nextZoom = (camera.zoom + delta)
         .clamp(_minMapZoom, _maxMapZoom)
         .toDouble();
-    _mapController.move(camera.center, nextZoom);
+    unawaited(_animateMapTo(camera.center, nextZoom));
   }
 
   void _openPlaceCluster(PlaceMarkerGroup group) {
     final zoomStep = group.places.length >= 8 ? 2.2 : 1.7;
-    _mapController.move(group.center, min(_mapZoom + zoomStep, _maxMapZoom));
+    unawaited(
+      _animateMapTo(group.center, min(_mapZoom + zoomStep, _maxMapZoom)),
+    );
   }
 
   void _handleMapPositionChanged(MapCamera camera, bool hasGesture) {
+    if (hasGesture) _mapAnimationGeneration++;
     if (hasGesture && _followUser) {
       _followUser = false;
     }
@@ -1748,9 +1913,8 @@ class _HomePageState extends State<HomePage> {
                         child: _AppearingPlaceMarker(
                           child: _PlaceClusterMarker(
                             count: group.places.length,
-                            icon: selectedCategory?.icon ?? Icons.wc_rounded,
-                            color:
-                                selectedCategory?.color ?? AppPalette.emerald,
+                            icon: _clusterIcon,
+                            color: _clusterColor,
                             onTap: () => _openPlaceCluster(group),
                           ),
                         ),
@@ -1849,8 +2013,12 @@ class _HomePageState extends State<HomePage> {
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 88, 14, 0),
                   child: _MapLegendBar(
-                    selectedKind: selectedCategory,
-                    onSelected: _selectMapCategory,
+                    showAll: showAllCategories,
+                    showToilets: showToiletPlaces,
+                    selectedKinds: selectedCategories,
+                    onShowAll: _showAllMapCategories,
+                    onToggleToilets: _toggleToiletCategory,
+                    onToggleKind: _toggleMapCategory,
                   ),
                 ),
               ),
@@ -1901,6 +2069,11 @@ class _HomePageState extends State<HomePage> {
                           ? green.withValues(alpha: isDark ? 0.28 : 0.14)
                           : scheme.surface,
                       foregroundColor: filtersActive ? green : scheme.onSurface,
+                      child: _CategoryFilterIcon(
+                        color: filtersActive ? green : scheme.onSurface,
+                        count: showAllCategories ? 0 : _selectedCategoryCount,
+                        showAll: showAllCategories,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     _MapActionButton(
@@ -2236,10 +2409,21 @@ class _ThemeMenuItem extends StatelessWidget {
 }
 
 class _MapLegendBar extends StatefulWidget {
-  final PlaceKind? selectedKind;
-  final ValueChanged<PlaceKind?> onSelected;
+  final bool showAll;
+  final bool showToilets;
+  final Set<PlaceKind> selectedKinds;
+  final VoidCallback onShowAll;
+  final VoidCallback onToggleToilets;
+  final ValueChanged<PlaceKind> onToggleKind;
 
-  const _MapLegendBar({required this.selectedKind, required this.onSelected});
+  const _MapLegendBar({
+    required this.showAll,
+    required this.showToilets,
+    required this.selectedKinds,
+    required this.onShowAll,
+    required this.onToggleToilets,
+    required this.onToggleKind,
+  });
 
   @override
   State<_MapLegendBar> createState() => _MapLegendBarState();
@@ -2319,19 +2503,28 @@ class _MapLegendBarState extends State<_MapLegendBar> {
                 child: Row(
                   children: [
                     _LegendItem(
+                      color: AppPalette.aqua,
+                      icon: Icons.layers_rounded,
+                      label: 'Все места',
+                      selected: widget.showAll,
+                      onTap: widget.onShowAll,
+                    ),
+                    _LegendItem(
                       color: Color(0xFF16A34A),
                       icon: Icons.wc_rounded,
                       label: 'Туалеты',
-                      selected: widget.selectedKind == null,
-                      onTap: () => widget.onSelected(null),
+                      selected: !widget.showAll && widget.showToilets,
+                      onTap: widget.onToggleToilets,
                     ),
                     ...PlaceKind.values.map(
                       (kind) => _LegendItem(
                         color: kind.color,
                         icon: kind.icon,
                         label: kind.shortLabel,
-                        selected: widget.selectedKind == kind,
-                        onTap: () => widget.onSelected(kind),
+                        selected:
+                            !widget.showAll &&
+                            widget.selectedKinds.contains(kind),
+                        onTap: () => widget.onToggleKind(kind),
                       ),
                     ),
                   ],
@@ -2429,7 +2622,7 @@ class _LegendItem extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: 'Показать: $label',
+      label: 'Категория $label: ${selected ? 'включена' : 'выключена'}',
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(13),
@@ -2502,20 +2695,27 @@ class _FilterCategoryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return ChoiceChip(
       selected: selected,
       onSelected: (_) => onSelected(),
-      avatar: Icon(icon, size: 18, color: selected ? color : Colors.blueGrey),
+      avatar: AnimatedScale(
+        scale: selected ? 1.12 : 1,
+        duration: const Duration(milliseconds: 180),
+        child: Icon(
+          icon,
+          size: 18,
+          color: selected ? color : scheme.onSurfaceVariant,
+        ),
+      ),
       label: Text(label),
       labelStyle: TextStyle(
         fontWeight: FontWeight.w800,
-        color: selected ? color : const Color(0xFF374151),
+        color: selected ? color : scheme.onSurface,
       ),
       selectedColor: color.withValues(alpha: 0.13),
       side: BorderSide(
-        color: selected
-            ? color.withValues(alpha: 0.35)
-            : const Color(0xFFE5E7EB),
+        color: selected ? color.withValues(alpha: 0.35) : scheme.outlineVariant,
       ),
       showCheckmark: false,
     );
@@ -2998,6 +3198,69 @@ class _MapActionButton extends StatelessWidget {
 
     if (tooltip == null) return button;
     return Tooltip(message: tooltip!, child: button);
+  }
+}
+
+class _CategoryFilterIcon extends StatelessWidget {
+  const _CategoryFilterIcon({
+    required this.color,
+    required this.count,
+    required this.showAll,
+  });
+
+  final Color color;
+  final int count;
+  final bool showAll;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.center,
+      children: [
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          transitionBuilder: (child, animation) => ScaleTransition(
+            scale: animation,
+            child: FadeTransition(opacity: animation, child: child),
+          ),
+          child: Icon(
+            showAll ? Icons.layers_rounded : Icons.filter_alt_rounded,
+            key: ValueKey(showAll),
+            size: 25,
+            color: color,
+          ),
+        ),
+        if (!showAll && count > 1)
+          Positioned(
+            top: -13,
+            right: -15,
+            child: AnimatedScale(
+              scale: count > 1 ? 1 : 0,
+              duration: const Duration(milliseconds: 180),
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 18),
+                height: 18,
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                decoration: BoxDecoration(
+                  color: AppPalette.pink,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '$count',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }
 
