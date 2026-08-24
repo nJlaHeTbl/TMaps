@@ -1,0 +1,17 @@
+name = "tmaps-community-api"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+
+[vars]
+ALLOWED_ORIGINS = "https://njlahetbl.github.io,http://localhost:3000,http://localhost:4173"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tmaps-community"
+database_id = "REPLACE_WITH_CLOUDFLARE_D1_DATABASE_ID"
+migrations_dir = "migrations"

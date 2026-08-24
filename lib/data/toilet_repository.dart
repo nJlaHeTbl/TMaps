@@ -1,15 +1,15 @@
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/content_guard.dart';
 import '../core/place_info.dart';
+import 'community_backend.dart';
 
 class ToiletRepository {
-  const ToiletRepository(this._client);
+  const ToiletRepository(this._backend);
 
-  final SupabaseClient _client;
+  final CommunityBackend _backend;
 
   Future<List<Map<String, dynamic>>> fetchAll() async {
     Future<List<Map<String, dynamic>>> safe(
@@ -41,7 +41,7 @@ class ToiletRepository {
   }
 
   Future<List<Map<String, dynamic>>> _fetchCommunityToilets() async {
-    final response = await _client.from('toilets').select();
+    final response = await _backend.fetchPlaces();
     return response
         .map(Map<String, dynamic>.from)
         .where(ContentGuard.isSafeCommunityToilet)
@@ -75,23 +75,12 @@ class ToiletRepository {
   }
 
   Future<List<Map<String, dynamic>>> _fetchReports() async {
-    final response = await _client
-        .from('toilet_reports')
-        .select()
-        .order('created_at', ascending: false);
-
-    return response
-        .map(Map<String, dynamic>.from)
-        .where(ContentGuard.isSafeReport)
-        .toList();
+    final response = await _backend.fetchReports();
+    return response.where(ContentGuard.isSafeReport).toList();
   }
 
-  Future<List<Map<String, dynamic>>> _fetchVoteTotals() async {
-    final response = await _client.rpc('get_place_vote_totals');
-    return (response as List<dynamic>)
-        .map((row) => Map<String, dynamic>.from(row as Map))
-        .toList(growable: false);
-  }
+  Future<List<Map<String, dynamic>>> _fetchVoteTotals() =>
+      _backend.fetchVoteTotals();
 
   List<Map<String, dynamic>> _attachCommunityData(
     List<Map<String, dynamic>> places,
@@ -128,49 +117,6 @@ class ToiletRepository {
         .toList(growable: false);
   }
 
-  Future<Map<String, dynamic>> add({
-    required double latitude,
-    required double longitude,
-    required String username,
-    required PlaceKind placeKind,
-    required bool isFree,
-    required int cleanliness,
-    required String condition,
-    String? comment,
-  }) async {
-    final usernameIssue = ContentGuard.validateUsername(username);
-    final commentIssue = ContentGuard.validateComment(comment);
-
-    if (usernameIssue != null) throw ArgumentError(usernameIssue);
-    if (commentIssue != null) throw ArgumentError(commentIssue);
-
-    final hasToilet = placeKind == PlaceKind.communityToilet;
-    final response = await _client
-        .from('toilets')
-        .insert({
-          'lat': latitude,
-          'lng': longitude,
-          'username': username,
-          'is_free': isFree,
-          'cleanliness': cleanliness,
-          'condition': condition,
-          'comment': comment,
-          'place_kind': PlaceInfo.valueOfKind(placeKind),
-          'has_toilet': hasToilet,
-          'access_type': 'public',
-        })
-        .select()
-        .single();
-
-    return {
-      ...Map<String, dynamic>.from(response),
-      'source': 'community',
-      'fee_known': true,
-      'phone_charging': placeKind == PlaceKind.phoneCharging,
-      'ev_charging': placeKind == PlaceKind.evCharging,
-    };
-  }
-
   Future<int> submitPlace({
     required double latitude,
     required double longitude,
@@ -186,20 +132,16 @@ class ToiletRepository {
     if (usernameIssue != null) throw ArgumentError(usernameIssue);
     if (commentIssue != null) throw ArgumentError(commentIssue);
 
-    final response = await _client.rpc(
-      'submit_place',
-      params: {
-        'p_lat': latitude,
-        'p_lng': longitude,
-        'p_username': username,
-        'p_place_kind': PlaceInfo.valueOfKind(placeKind),
-        'p_is_free': isFree,
-        'p_cleanliness': cleanliness,
-        'p_condition': condition,
-        'p_comment': comment,
-      },
+    return _backend.submitPlace(
+      latitude: latitude,
+      longitude: longitude,
+      username: username,
+      placeKind: placeKind,
+      isFree: isFree,
+      cleanliness: cleanliness,
+      condition: condition,
+      comment: comment,
     );
-    return (response as num).toInt();
   }
 
   Future<Map<String, dynamic>> addReport({
@@ -221,27 +163,21 @@ class ToiletRepository {
     if (usernameIssue != null) throw ArgumentError(usernameIssue);
     if (commentIssue != null) throw ArgumentError(commentIssue);
 
-    final response = await _client
-        .from('toilet_reports')
-        .insert({
-          'place_key': PlaceInfo.keyOf(place),
-          'lat': (place['lat'] as num).toDouble(),
-          'lng': (place['lng'] as num).toDouble(),
-          'username': username,
-          'cleanliness': cleanliness,
-          'condition': condition,
-          'has_toilet': hasToilet,
-          'has_paper': hasPaper,
-          'has_soap': hasSoap,
-          'wheelchair_accessible': wheelchairAccessible,
-          'phone_charging': phoneCharging,
-          'access_type': accessType,
-          'comment': comment,
-        })
-        .select()
-        .single();
-
-    return Map<String, dynamic>.from(response);
+    return _backend.addReport(
+      placeKey: PlaceInfo.keyOf(place),
+      latitude: (place['lat'] as num).toDouble(),
+      longitude: (place['lng'] as num).toDouble(),
+      username: username,
+      cleanliness: cleanliness,
+      condition: condition,
+      hasToilet: hasToilet,
+      hasPaper: hasPaper,
+      hasSoap: hasSoap,
+      wheelchairAccessible: wheelchairAccessible,
+      phoneCharging: phoneCharging,
+      accessType: accessType,
+      comment: comment,
+    );
   }
 
   Future<void> castVote({
@@ -249,13 +185,10 @@ class ToiletRepository {
     required String voterKey,
     required bool isCurrent,
   }) async {
-    await _client.rpc(
-      'cast_place_vote',
-      params: {
-        'p_place_key': PlaceInfo.keyOf(place),
-        'p_voter_key': voterKey,
-        'p_is_current': isCurrent,
-      },
+    await _backend.castVote(
+      placeKey: PlaceInfo.keyOf(place),
+      voterKey: voterKey,
+      isCurrent: isCurrent,
     );
   }
 }

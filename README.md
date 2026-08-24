@@ -16,6 +16,14 @@ TMaps — открытая карта туалетов, доступных за�
 ## Сайты
 
 - GitHub Pages: <https://njlahetbl.github.io/TMaps/>
-- резервный Netlify: <https://tmaps-kz.netlify.app/>
 
-Данные OpenStreetMap используются на условиях ODbL 1.0.
+## Разработка
+
+- план безопасного переноса базы: [docs/BACKEND_MIGRATION_RU.md](docs/BACKEND_MIGRATION_RU.md);
+- подготовленный Cloudflare API: [backend/README.md](backend/README.md);
+- позиционирование и оценка: [docs/COMMERCIAL_OFFER_RU.md](docs/COMMERCIAL_OFFER_RU.md).
+
+Данные OpenStreetMap используются на условиях ODbL 1.0. Спутниковые снимки и
+подписи предоставляются Esri и указанными поставщиками; обязательная атрибуция
+показывается непосредственно на карте. Перед коммерческим использованием
+спутникового слоя условия лицензии провайдера должны быть согласованы отдельно.

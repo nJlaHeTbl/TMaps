@@ -33,6 +33,11 @@ migrate_working_dir/
 /build/native_assets/
 /build/test_cache/
 /build/unit_test_assets/
+node_modules/
+.dev.vars
+.wrangler/
+backend/data/*.json
+!backend/data/.gitkeep
 
 # Symbolication related
 app.*.symbols

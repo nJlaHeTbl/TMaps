@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>TMaps · Модерация</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #eef8f2;
+        color: #10231a;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 5% 0%, rgba(37, 185, 120, .18), transparent 34rem),
+          radial-gradient(circle at 100% 20%, rgba(65, 145, 255, .13), transparent 32rem),
+          #eef8f2;
+      }
+      button, input { font: inherit; }
+      .shell { width: min(1080px, calc(100% - 28px)); margin: 0 auto; padding: 28px 0 64px; }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 18px 20px;
+        border: 1px solid rgba(16, 67, 43, .1);
+        border-radius: 24px;
+        background: rgba(255, 255, 255, .82);
+        backdrop-filter: blur(18px);
+        box-shadow: 0 18px 50px rgba(28, 92, 61, .09);
+      }
+      .brand { display: flex; align-items: center; gap: 13px; }
+      .logo {
+        display: grid;
+        width: 48px;
+        height: 48px;
+        place-items: center;
+        border-radius: 16px;
+        color: white;
+        font-size: 25px;
+        background: linear-gradient(145deg, #2ecb8b, #15985f);
+        box-shadow: 0 12px 24px rgba(21, 152, 95, .25);
+      }
+      h1 { margin: 0; font-size: 20px; letter-spacing: -.02em; }
+      .subtitle { margin: 3px 0 0; color: #648073; font-size: 13px; }
+      .logout { border: 0; background: #e7f2eb; color: #365246; padding: 9px 13px; border-radius: 12px; cursor: pointer; }
+      .auth {
+        display: grid;
+        max-width: 520px;
+        gap: 14px;
+        margin: 70px auto 0;
+        padding: 28px;
+        border-radius: 26px;
+        background: white;
+        box-shadow: 0 22px 70px rgba(28, 92, 61, .12);
+      }
+      .auth h2 { margin: 0; font-size: 24px; }
+      .auth p { margin: 0; color: #667d71; line-height: 1.5; }
+      input {
+        width: 100%;
+        border: 1px solid #d8e7de;
+        border-radius: 15px;
+        padding: 14px 15px;
+        outline: none;
+        background: #f9fcfa;
+      }
+      input:focus { border-color: #25b978; box-shadow: 0 0 0 4px rgba(37, 185, 120, .12); }
+      .primary {
+        border: 0;
+        border-radius: 15px;
+        padding: 14px 18px;
+        color: white;
+        font-weight: 750;
+        background: linear-gradient(135deg, #24bd7a, #128f59);
+        cursor: pointer;
+      }
+      .toolbar { display: flex; gap: 9px; margin: 22px 0 16px; overflow-x: auto; padding: 2px; }
+      .tab {
+        flex: none;
+        border: 1px solid #d6e8dd;
+        border-radius: 999px;
+        padding: 10px 15px;
+        color: #49675a;
+        background: rgba(255,255,255,.78);
+        cursor: pointer;
+      }
+      .tab.active { border-color: #1eaa6d; color: white; background: #1eaa6d; }
+      .status { min-height: 24px; margin: 4px 2px 12px; color: #61786c; }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+      .card {
+        border: 1px solid rgba(16, 67, 43, .09);
+        border-radius: 22px;
+        padding: 19px;
+        background: rgba(255,255,255,.91);
+        box-shadow: 0 12px 36px rgba(28, 92, 61, .07);
+      }
+      .card-top { display: flex; justify-content: space-between; gap: 12px; }
+      .kind { margin: 0; font-size: 17px; }
+      .badge { height: fit-content; padding: 5px 9px; border-radius: 999px; background: #fff4cf; color: #8c6400; font-size: 12px; font-weight: 750; }
+      .badge.approved { background: #dff7e9; color: #087849; }
+      .badge.rejected { background: #ffe2e2; color: #a72e2e; }
+      .meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 15px 0; }
+      .meta div { padding: 10px 11px; border-radius: 13px; background: #f1f7f3; }
+      .meta span { display: block; color: #71877b; font-size: 11px; margin-bottom: 3px; }
+      .comment { margin: 0 0 14px; line-height: 1.5; color: #354d41; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .actions { display: flex; gap: 9px; flex-wrap: wrap; }
+      .actions a, .actions button { border: 0; border-radius: 12px; padding: 10px 13px; text-decoration: none; cursor: pointer; }
+      .map { color: #22664b; background: #e8f3ed; }
+      .approve { color: white; background: #1ba86a; }
+      .reject { color: #9c2929; background: #ffe6e6; }
+      .empty { grid-column: 1/-1; padding: 54px 20px; text-align: center; color: #6a8175; }
+      .hidden { display: none !important; }
+      @media (max-width: 720px) {
+        .shell { width: min(100% - 18px, 1080px); padding-top: 9px; }
+        header { border-radius: 19px; padding: 14px; }
+        .grid { grid-template-columns: 1fr; }
+        .auth { margin-top: 40px; padding: 22px; }
+        .meta { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div class="brand">
+          <div class="logo">⌖</div>
+          <div><h1>TMaps</h1><p class="subtitle">Проверка новых точек</p></div>
+        </div>
+        <button id="logout" class="logout hidden" type="button">Выйти</button>
+      </header>
+
+      <form id="auth" class="auth">
+        <h2>Вход модератора</h2>
+        <p>Введи секретный ключ Cloudflare. Он хранится только до закрытия этой вкладки.</p>
+        <input id="token" type="password" autocomplete="current-password" placeholder="Секретный ключ" required />
+        <button class="primary" type="submit">Открыть заявки</button>
+      </form>
+
+      <section id="dashboard" class="hidden">
+        <nav class="toolbar" aria-label="Статус заявок">
+          <button class="tab active" data-status="pending" type="button">Ждут проверки</button>
+          <button class="tab" data-status="approved" type="button">Одобрены</button>
+          <button class="tab" data-status="rejected" type="button">Отклонены</button>
+        </nav>
+        <div id="status" class="status" role="status"></div>
+        <div id="grid" class="grid"></div>
+      </section>
+    </main>
+
+    <script>
+      const auth = document.querySelector('#auth');
+      const dashboard = document.querySelector('#dashboard');
+      const tokenInput = document.querySelector('#token');
+      const logout = document.querySelector('#logout');
+      const statusLine = document.querySelector('#status');
+      const grid = document.querySelector('#grid');
+      let token = sessionStorage.getItem('tmaps_admin_token') || '';
+      let selectedStatus = 'pending';
+
+      const labels = {
+        community_toilet: 'Общественный туалет',
+        phone_charging: 'Зарядка телефона',
+        ev_charging: 'Электрозарядка',
+        water: 'Источник воды',
+        pending: 'Ожидает',
+        approved: 'Одобрена',
+        rejected: 'Отклонена',
+      };
+
+      auth.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        token = tokenInput.value.trim();
+        if (!token) return;
+        sessionStorage.setItem('tmaps_admin_token', token);
+        await openDashboard();
+      });
+
+      logout.addEventListener('click', () => {
+        sessionStorage.removeItem('tmaps_admin_token');
+        token = '';
+        dashboard.classList.add('hidden');
+        logout.classList.add('hidden');
+        auth.classList.remove('hidden');
+        tokenInput.value = '';
+      });
+
+      document.querySelectorAll('.tab').forEach((button) => {
+        button.addEventListener('click', async () => {
+          selectedStatus = button.dataset.status;
+          document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab === button));
+          await loadSubmissions();
+        });
+      });
+
+      async function openDashboard() {
+        auth.classList.add('hidden');
+        dashboard.classList.remove('hidden');
+        logout.classList.remove('hidden');
+        await loadSubmissions();
+      }
+
+      async function loadSubmissions() {
+        statusLine.textContent = 'Загружаю заявки…';
+        grid.replaceChildren();
+        try {
+          const response = await api(`/api/admin/submissions?status=${encodeURIComponent(selectedStatus)}`);
+          renderSubmissions(response.submissions || []);
+          statusLine.textContent = `Найдено: ${(response.submissions || []).length}`;
+        } catch (error) {
+          statusLine.textContent = error.message;
+          if (error.status === 401) logout.click();
+        }
+      }
+
+      function renderSubmissions(items) {
+        grid.replaceChildren();
+        if (!items.length) {
+          const empty = element('div', 'empty', selectedStatus === 'pending' ? 'Новых заявок пока нет' : 'В этом разделе пока пусто');
+          grid.append(empty);
+          return;
+        }
+        items.forEach((item) => grid.append(renderCard(item)));
+      }
+
+      function renderCard(item) {
+        const card = element('article', 'card');
+        const top = element('div', 'card-top');
+        top.append(
+          element('h2', 'kind', labels[item.place_kind] || 'Новая точка'),
+          element('span', `badge ${item.status}`, labels[item.status] || item.status),
+        );
+        card.append(top);
+
+        const meta = element('div', 'meta');
+        addMeta(meta, 'Автор', item.username || 'Без имени');
+        addMeta(meta, 'Стоимость', Number(item.is_free) === 1 ? 'Бесплатно' : 'Платно');
+        addMeta(meta, 'Чистота', `${item.cleanliness || '—'} из 5`);
+        addMeta(meta, 'Состояние', item.condition || '—');
+        card.append(meta);
+
+        if (item.comment) card.append(element('p', 'comment', item.comment));
+        const actions = element('div', 'actions');
+        const map = element('a', 'map', 'Открыть на карте');
+        map.href = `https://www.openstreetmap.org/?mlat=${encodeURIComponent(item.lat)}&mlon=${encodeURIComponent(item.lng)}#map=18/${encodeURIComponent(item.lat)}/${encodeURIComponent(item.lng)}`;
+        map.target = '_blank';
+        map.rel = 'noopener noreferrer';
+        actions.append(map);
+        if (item.status === 'pending') {
+          const approve = element('button', 'approve', 'Одобрить');
+          approve.type = 'button';
+          approve.addEventListener('click', () => moderate(item.id, 'approved', approve));
+          const reject = element('button', 'reject', 'Отклонить');
+          reject.type = 'button';
+          reject.addEventListener('click', () => moderate(item.id, 'rejected', reject));
+          actions.append(approve, reject);
+        }
+        card.append(actions);
+        return card;
+      }
+
+      async function moderate(id, nextStatus, button) {
+        button.disabled = true;
+        statusLine.textContent = 'Сохраняю решение…';
+        try {
+          await api(`/api/admin/submissions/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status: nextStatus }),
+          });
+          await loadSubmissions();
+        } catch (error) {
+          button.disabled = false;
+          statusLine.textContent = error.message;
+        }
+      }
+
+      async function api(path, options = {}) {
+        const response = await fetch(path, {
+          ...options,
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            ...(options.headers || {}),
+          },
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const error = new Error(payload.error || 'Не удалось связаться с сервером');
+          error.status = response.status;
+          throw error;
+        }
+        return payload;
+      }
+
+      function addMeta(parent, label, value) {
+        const block = document.createElement('div');
+        block.append(element('span', '', label), document.createTextNode(value));
+        parent.append(block);
+      }
+
+      function element(tag, className = '', text = '') {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text) node.textContent = text;
+        return node;
+      }
+
+      if (token) openDashboard();
+    </script>
+  </body>
+</html>

@@ -18,6 +18,8 @@ import 'core/map_display_policy.dart';
 import 'core/map_marker_clustering.dart';
 import 'core/place_info.dart';
 import 'core/place_visibility_policy.dart';
+import 'data/http_community_backend.dart';
+import 'data/supabase_community_backend.dart';
 import 'data/toilet_repository.dart';
 import 'presentation/place_category_style.dart';
 import 'services/favorites_service.dart';
@@ -46,10 +48,12 @@ Color _toiletFeeColor({required bool feeKnown, required bool isFree}) {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Supabase.initialize(
-    url: AppConfig.supabaseUrl,
-    publishableKey: AppConfig.supabasePublishableKey,
-  );
+  if (!AppConfig.usesCommunityApi) {
+    await Supabase.initialize(
+      url: AppConfig.supabaseUrl,
+      publishableKey: AppConfig.supabasePublishableKey,
+    );
+  }
 
   runApp(const TMapsApp());
 }
@@ -296,7 +300,10 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
 
-    _toiletRepository = ToiletRepository(Supabase.instance.client);
+    final communityBackend = AppConfig.usesCommunityApi
+        ? HttpCommunityBackend(baseUrl: AppConfig.communityApiBaseUrl)
+        : SupabaseCommunityBackend(Supabase.instance.client);
+    _toiletRepository = ToiletRepository(communityBackend);
 
     _locationSubscription = _locationService.positions.listen(_applyPosition);
 
