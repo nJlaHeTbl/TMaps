@@ -24,6 +24,77 @@
 команда TMaps
 https://njlahetbl.github.io/TMaps/
 
+## Good2Go — English draft
+
+**Subject:** A community discovery layer for Good2Go's restroom access platform
+
+Hello Good2Go team,
+
+We are building TMaps, an installable mobile web platform for finding and
+verifying everyday public infrastructure. Alongside restroom discovery, it
+supports community corrections, amenity feedback, moderated submissions,
+accessibility details, directions, and additional categories such as drinking
+water and charging.
+
+Good2Go already solves secure access and operational control. We would like to
+explore whether TMaps could add value as a white-label public discovery and
+community-feedback layer, particularly for a focused city pilot or international
+expansion.
+
+We can share a live demo and propose a short paid prototype with clear success
+metrics. We are looking for a product or partnerships conversation, not a
+generic software sale.
+
+Best regards,
+TMaps team
+https://njlahetbl.github.io/TMaps/
+
+## Crohn's & Colitis Foundation — English draft
+
+**Subject:** Pilot idea for community-verified restroom information
+
+Hello We Can't Wait / Open Restrooms team,
+
+We are developing TMaps, a mobile-first PWA for urgent restroom discovery and
+community-verified public amenities. We respect that We Can't Wait already has a
+large U.S. restroom network and strong business partnerships.
+
+Rather than proposing a replacement, we would like to explore a focused licensed
+pilot that could add a modern web experience, multilingual access, remote
+submissions with moderation, and faster community reporting of closures or
+incorrect details under your existing program and brand.
+
+If useful, we can provide a live demo and a concise 12-week pilot outline for one
+city or partner network. Could you direct us to the person responsible for the
+app's product or partnership roadmap?
+
+Best regards,
+TMaps team
+https://njlahetbl.github.io/TMaps/
+
+## US city / public agency — English draft
+
+**Subject:** Paid pilot for faster public-restroom status and correction updates
+
+Hello,
+
+TMaps is a mobile-first, installable web platform that combines official public-
+amenity data with moderated community reports. Residents can find nearby
+restrooms, check accessibility and operating conditions, report closures or
+incorrect information, and submit a missing location for review.
+
+We would like to propose a small paid pilot for one district, using the city's
+existing dataset rather than replacing it. The pilot would measure how quickly
+closure and correction reports are received, reviewed, and reflected for users,
+then provide a data-quality report before any wider rollout decision.
+
+We can share a working demo and a 12-week scope. Could you direct us to the team
+responsible for the public-restroom map, digital services, or civic data pilots?
+
+Best regards,
+TMaps team
+https://njlahetbl.github.io/TMaps/
+
 ## Сеть АЗС
 
 **Тема:** TMaps — проверенный слой туалетов и зарядок вашей сети на карте Казахстана

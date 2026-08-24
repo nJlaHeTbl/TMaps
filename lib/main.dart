@@ -16,6 +16,7 @@ import 'core/content_guard.dart';
 import 'core/map_base_style.dart';
 import 'core/map_display_policy.dart';
 import 'core/map_marker_clustering.dart';
+import 'core/map_tile_policy.dart';
 import 'core/place_info.dart';
 import 'core/place_visibility_policy.dart';
 import 'data/http_community_backend.dart';
@@ -1872,16 +1873,20 @@ class _HomePageState extends State<HomePage> {
               },
             ),
             children: [
-              _MapBaseLayer(style: _mapBaseStyle, isDark: isDark),
+              _StreetMapLayer(isDark: isDark),
+              if (_mapBaseStyle == MapBaseStyle.satellite)
+                _SatelliteMapLayer(isDark: isDark),
               if (_mapBaseStyle == MapBaseStyle.satellite)
                 TileLayer(
-                  urlTemplate:
-                      'https://services.arcgisonline.com/ArcGIS/rest/services/'
-                      'Reference/World_Boundaries_and_Places/MapServer/tile/'
-                      '{z}/{y}/{x}',
+                  key: const ValueKey('satellite-label-tiles'),
+                  urlTemplate: MapTilePolicy.satelliteLabelsUrl,
+                  fallbackUrl: MapTilePolicy.satelliteLabelsFallbackUrl,
                   userAgentPackageName: 'com.tmaps.app',
-                  keepBuffer: 1,
-                  panBuffer: 0,
+                  maxNativeZoom: MapTilePolicy.satelliteLabelsMaxNativeZoom,
+                  keepBuffer: MapTilePolicy.keepBuffer,
+                  panBuffer: MapTilePolicy.panBuffer,
+                  evictErrorTileStrategy:
+                      EvictErrorTileStrategy.notVisibleRespectMargin,
                 ),
               RichAttributionWidget(
                 attributions: [
@@ -2225,20 +2230,13 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class _MapBaseLayer extends StatelessWidget {
-  const _MapBaseLayer({required this.style, required this.isDark});
+class _StreetMapLayer extends StatelessWidget {
+  const _StreetMapLayer({required this.isDark});
 
-  final MapBaseStyle style;
   final bool isDark;
 
   @override
   Widget build(BuildContext context) {
-    return style == MapBaseStyle.satellite
-        ? _buildSatelliteLayer()
-        : _buildStreetLayer();
-  }
-
-  Widget _buildStreetLayer() {
     return ColorFiltered(
       colorFilter: ColorFilter.matrix(
         isDark
@@ -2288,22 +2286,36 @@ class _MapBaseLayer extends StatelessWidget {
               ],
       ),
       child: TileLayer(
-        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        key: const ValueKey('street-map-tiles'),
+        urlTemplate: MapTilePolicy.streetUrl,
         userAgentPackageName: 'com.tmaps.app',
-        keepBuffer: 1,
-        panBuffer: 0,
+        keepBuffer: MapTilePolicy.keepBuffer,
+        panBuffer: MapTilePolicy.panBuffer,
+        evictErrorTileStrategy: EvictErrorTileStrategy.notVisibleRespectMargin,
       ),
     );
   }
+}
 
-  Widget _buildSatelliteLayer() {
+class _SatelliteMapLayer extends StatelessWidget {
+  const _SatelliteMapLayer({required this.isDark});
+
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
     Widget imagery = TileLayer(
-      urlTemplate:
-          'https://services.arcgisonline.com/ArcGIS/rest/services/'
-          'World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      key: const ValueKey('satellite-imagery-tiles'),
+      urlTemplate: MapTilePolicy.satelliteUrl,
+      fallbackUrl: MapTilePolicy.satelliteFallbackUrl,
       userAgentPackageName: 'com.tmaps.app',
-      keepBuffer: 1,
-      panBuffer: 0,
+      maxNativeZoom: MapTilePolicy.satelliteMaxNativeZoom,
+      keepBuffer: MapTilePolicy.keepBuffer,
+      panBuffer: MapTilePolicy.panBuffer,
+      tileDisplay: const TileDisplay.fadeIn(
+        duration: Duration(milliseconds: 180),
+      ),
+      evictErrorTileStrategy: EvictErrorTileStrategy.notVisibleRespectMargin,
     );
 
     if (isDark) {
