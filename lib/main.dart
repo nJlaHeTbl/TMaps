@@ -13,6 +13,7 @@ import 'core/app_config.dart';
 import 'core/app_palette.dart';
 import 'core/app_theme.dart';
 import 'core/content_guard.dart';
+import 'core/map_base_style.dart';
 import 'core/map_display_policy.dart';
 import 'core/map_marker_clustering.dart';
 import 'core/place_info.dart';
@@ -21,6 +22,7 @@ import 'data/toilet_repository.dart';
 import 'presentation/place_category_style.dart';
 import 'services/favorites_service.dart';
 import 'services/live_location_service.dart';
+import 'services/map_style_preference_service.dart';
 import 'services/route_service.dart';
 import 'services/submission_history_service.dart';
 import 'services/theme_preference_service.dart';
@@ -116,6 +118,8 @@ class _HomePageState extends State<HomePage> {
   final MapController _mapController = MapController();
   final RouteService _routeService = const RouteService();
   final FavoritesService _favoritesService = const FavoritesService();
+  final MapStylePreferenceService _mapStylePreferenceService =
+      const MapStylePreferenceService();
   final SubmissionHistoryService _submissionHistoryService =
       const SubmissionHistoryService();
   final LiveLocationService _locationService = LiveLocationService();
@@ -133,6 +137,7 @@ class _HomePageState extends State<HomePage> {
   double _locationHeading = 0;
   bool _followUser = false;
   bool _isPickingLocation = false;
+  MapBaseStyle _mapBaseStyle = MapBaseStyle.streets;
 
   final List<Map<String, dynamic>> toilets = [];
   List<TrackedSubmission> _submissionHistory = const [];
@@ -296,6 +301,7 @@ class _HomePageState extends State<HomePage> {
     _locationSubscription = _locationService.positions.listen(_applyPosition);
 
     loadUsername();
+    unawaited(_loadMapBaseStyle());
     unawaited(_loadFavorites());
     unawaited(_loadSubmissionHistory());
     unawaited(_startLocation(requestPermission: false));
@@ -334,6 +340,47 @@ class _HomePageState extends State<HomePage> {
         showUsernameDialog();
       }
     });
+  }
+
+  Future<void> _loadMapBaseStyle() async {
+    final savedStyle = await _mapStylePreferenceService.load();
+    if (!mounted) return;
+    setState(() => _mapBaseStyle = savedStyle);
+  }
+
+  Future<void> _setMapBaseStyle(MapBaseStyle style) async {
+    if (_mapBaseStyle == style) return;
+
+    final previousStyle = _mapBaseStyle;
+    setState(() => _mapBaseStyle = style);
+
+    try {
+      await _mapStylePreferenceService.save(style);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _mapBaseStyle = previousStyle);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text('Не удалось сохранить выбранный слой карты'),
+        ),
+      );
+    }
+  }
+
+  void showMapStylePicker() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => _MapStyleSheet(
+        selectedStyle: _mapBaseStyle,
+        onSelected: (style) {
+          Navigator.of(sheetContext).pop();
+          unawaited(_setMapBaseStyle(style));
+        },
+      ),
+    );
   }
 
   Future<void> _loadFavorites() async {
@@ -1818,64 +1865,27 @@ class _HomePageState extends State<HomePage> {
               },
             ),
             children: [
-              ColorFiltered(
-                colorFilter: ColorFilter.matrix(
-                  isDark
-                      ? const [
-                          -0.14,
-                          -0.14,
-                          -0.07,
-                          0,
-                          165,
-                          -0.10,
-                          -0.20,
-                          -0.05,
-                          0,
-                          178,
-                          -0.10,
-                          -0.13,
-                          -0.10,
-                          0,
-                          180,
-                          0,
-                          0,
-                          0,
-                          1,
-                          0,
-                        ]
-                      : const [
-                          0.74,
-                          0.17,
-                          0.04,
-                          0,
-                          18,
-                          0.08,
-                          0.82,
-                          0.05,
-                          0,
-                          20,
-                          0.06,
-                          0.17,
-                          0.72,
-                          0,
-                          23,
-                          0,
-                          0,
-                          0,
-                          1,
-                          0,
-                        ],
-                ),
-                child: TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              _MapBaseLayer(style: _mapBaseStyle, isDark: isDark),
+              if (_mapBaseStyle == MapBaseStyle.satellite)
+                TileLayer(
+                  urlTemplate:
+                      'https://services.arcgisonline.com/ArcGIS/rest/services/'
+                      'Reference/World_Boundaries_and_Places/MapServer/tile/'
+                      '{z}/{y}/{x}',
                   userAgentPackageName: 'com.tmaps.app',
                   keepBuffer: 1,
                   panBuffer: 0,
                 ),
-              ),
-              const RichAttributionWidget(
+              RichAttributionWidget(
                 attributions: [
-                  TextSourceAttribution('OpenStreetMap contributors'),
+                  if (_mapBaseStyle == MapBaseStyle.satellite)
+                    const TextSourceAttribution(
+                      'Imagery © Esri, Vantor, Earthstar Geographics, '
+                      'GIS User Community; labels © Esri, TomTom, Garmin, '
+                      'OpenStreetMap contributors',
+                    )
+                  else
+                    const TextSourceAttribution('OpenStreetMap contributors'),
                 ],
                 popupInitialDisplayDuration: Duration(seconds: 5),
               ),
@@ -2050,6 +2060,22 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 12),
                     _MapActionButton(
+                      icon: _mapBaseStyle == MapBaseStyle.satellite
+                          ? Icons.satellite_alt_rounded
+                          : Icons.layers_rounded,
+                      onPressed: showMapStylePicker,
+                      tooltip: _mapBaseStyle == MapBaseStyle.satellite
+                          ? 'Спутниковая карта'
+                          : 'Слой карты',
+                      backgroundColor: _mapBaseStyle == MapBaseStyle.satellite
+                          ? AppPalette.aqua
+                          : scheme.surface,
+                      foregroundColor: _mapBaseStyle == MapBaseStyle.satellite
+                          ? Colors.white
+                          : scheme.onSurface,
+                    ),
+                    const SizedBox(height: 12),
+                    _MapActionButton(
                       icon: Icons.my_location_rounded,
                       onPressed: centerOnUser,
                       tooltip: 'Моё местоположение',
@@ -2187,6 +2213,360 @@ class _HomePageState extends State<HomePage> {
               onConfirm: _confirmPickedLocation,
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _MapBaseLayer extends StatelessWidget {
+  const _MapBaseLayer({required this.style, required this.isDark});
+
+  final MapBaseStyle style;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    return style == MapBaseStyle.satellite
+        ? _buildSatelliteLayer()
+        : _buildStreetLayer();
+  }
+
+  Widget _buildStreetLayer() {
+    return ColorFiltered(
+      colorFilter: ColorFilter.matrix(
+        isDark
+            ? const [
+                -0.14,
+                -0.14,
+                -0.07,
+                0,
+                165,
+                -0.10,
+                -0.20,
+                -0.05,
+                0,
+                178,
+                -0.10,
+                -0.13,
+                -0.10,
+                0,
+                180,
+                0,
+                0,
+                0,
+                1,
+                0,
+              ]
+            : const [
+                0.74,
+                0.17,
+                0.04,
+                0,
+                18,
+                0.08,
+                0.82,
+                0.05,
+                0,
+                20,
+                0.06,
+                0.17,
+                0.72,
+                0,
+                23,
+                0,
+                0,
+                0,
+                1,
+                0,
+              ],
+      ),
+      child: TileLayer(
+        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        userAgentPackageName: 'com.tmaps.app',
+        keepBuffer: 1,
+        panBuffer: 0,
+      ),
+    );
+  }
+
+  Widget _buildSatelliteLayer() {
+    Widget imagery = TileLayer(
+      urlTemplate:
+          'https://services.arcgisonline.com/ArcGIS/rest/services/'
+          'World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      userAgentPackageName: 'com.tmaps.app',
+      keepBuffer: 1,
+      panBuffer: 0,
+    );
+
+    if (isDark) {
+      imagery = ColorFiltered(
+        colorFilter: const ColorFilter.mode(
+          Color(0x33000000),
+          BlendMode.darken,
+        ),
+        child: imagery,
+      );
+    }
+
+    return imagery;
+  }
+}
+
+class _MapStyleSheet extends StatelessWidget {
+  const _MapStyleSheet({required this.selectedStyle, required this.onSelected});
+
+  final MapBaseStyle selectedStyle;
+  final ValueChanged<MapBaseStyle> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(18, 10, 18, 22),
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.20),
+              blurRadius: 28,
+              offset: const Offset(0, -8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Align(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: scheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    gradient: AppPalette.brandGradient,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.layers_rounded, color: Colors.white),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Вид карты',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      Text(
+                        'Переключай слой — точки и маршрут останутся на месте',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: _MapStyleOptionCard(
+                    title: 'Обычная',
+                    subtitle: 'Улицы и дома',
+                    icon: Icons.map_rounded,
+                    selected: selectedStyle == MapBaseStyle.streets,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF7DD3FC), Color(0xFF86EFAC)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    onTap: () => onSelected(MapBaseStyle.streets),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _MapStyleOptionCard(
+                    title: 'Спутник',
+                    subtitle: 'Снимки местности',
+                    icon: Icons.satellite_alt_rounded,
+                    selected: selectedStyle == MapBaseStyle.satellite,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF0F766E), Color(0xFF713F12)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    onTap: () => onSelected(MapBaseStyle.satellite),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.68),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 19,
+                    color: scheme.primary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'В спутниковом режиме используются снимки Esri, '
+                      'а названия городов остаются поверх карты.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MapStyleOptionCard extends StatelessWidget {
+  const _MapStyleOptionCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.selected,
+    required this.gradient,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool selected;
+  final Gradient gradient;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$title: $subtitle',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: selected
+                ? scheme.primaryContainer.withValues(alpha: 0.60)
+                : scheme.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected ? scheme.primary : scheme.outlineVariant,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 84,
+                decoration: BoxDecoration(
+                  gradient: gradient,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      right: -14,
+                      top: -18,
+                      child: Icon(
+                        icon,
+                        size: 92,
+                        color: Colors.white.withValues(alpha: 0.20),
+                      ),
+                    ),
+                    Center(child: Icon(icon, size: 38, color: Colors.white)),
+                    if (selected)
+                      const Positioned(
+                        right: 8,
+                        top: 8,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Padding(
+                            padding: EdgeInsets.all(3),
+                            child: Icon(
+                              Icons.check_rounded,
+                              size: 16,
+                              color: AppPalette.emerald,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

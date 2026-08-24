@@ -1,0 +1,1 @@
+enum MapBaseStyle { streets, satellite }
