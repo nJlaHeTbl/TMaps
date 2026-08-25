@@ -79,4 +79,39 @@ void main() {
       ),
     );
   });
+
+  test('sends an updated toilet fee in a community report', () async {
+    final backend = HttpCommunityBackend(
+      baseUrl: 'https://api.tmaps.test',
+      client: MockClient((request) async {
+        expect(request.url.path, '/api/reports');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['isFree'], false);
+        return http.Response(
+          jsonEncode({
+            'report': {'id': 8, 'is_free': false},
+          }),
+          201,
+        );
+      }),
+    );
+
+    final report = await backend.addReport(
+      placeKey: 'osm:123',
+      latitude: 45,
+      longitude: 78,
+      username: 'Мирас',
+      cleanliness: 4,
+      condition: 'Хорошее',
+      isFree: false,
+      hasToilet: true,
+      hasPaper: true,
+      hasSoap: true,
+      wheelchairAccessible: null,
+      phoneCharging: null,
+      accessType: 'public',
+    );
+
+    expect(report['is_free'], isFalse);
+  });
 }

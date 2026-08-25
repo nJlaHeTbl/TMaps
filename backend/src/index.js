@@ -164,10 +164,10 @@ async function submitReport(request, env) {
 
   const report = await env.DB.prepare(
     `INSERT INTO toilet_reports
-      (place_key, lat, lng, username, cleanliness, condition, has_toilet,
+      (place_key, lat, lng, username, cleanliness, condition, is_free, has_toilet,
        has_paper, has_soap, wheelchair_accessible, phone_charging,
        access_type, comment)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      RETURNING *`,
   ).bind(
     input.placeKey,
@@ -176,6 +176,7 @@ async function submitReport(request, env) {
     input.username,
     input.cleanliness,
     input.condition,
+    nullableBoolInt(input.isFree),
     nullableBoolInt(input.hasToilet),
     nullableBoolInt(input.hasPaper),
     nullableBoolInt(input.hasSoap),
@@ -277,7 +278,8 @@ function validateReport(body) {
   const accessType = requiredText(body.accessType, 'Доступ', 2, 20);
   if (!ACCESS_TYPES.has(accessType)) throw new HttpError(400, 'Неизвестный тип доступа');
   const nullableBooleans = [
-    'hasToilet', 'hasPaper', 'hasSoap', 'wheelchairAccessible', 'phoneCharging',
+    'isFree', 'hasToilet', 'hasPaper', 'hasSoap', 'wheelchairAccessible',
+    'phoneCharging',
   ];
   for (const field of nullableBooleans) {
     if (body[field] !== null && body[field] !== undefined && typeof body[field] !== 'boolean') {

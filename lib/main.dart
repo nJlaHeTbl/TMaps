@@ -1416,8 +1416,8 @@ class _HomePageState extends State<HomePage> {
         toilet['username']?.toString() ??
         'Неизвестный пользователь';
 
-    final bool isFree = toilet['is_free'] == true;
-    final bool feeKnown = toilet['fee_known'] != false;
+    final bool isFree = PlaceInfo.feeStatus(toilet) == true;
+    final bool feeKnown = PlaceInfo.feeKnown(toilet);
 
     final int cleanliness =
         (PlaceInfo.effectiveValue(toilet, 'cleanliness') as num?)?.toInt() ?? 0;
@@ -1548,6 +1548,8 @@ class _HomePageState extends State<HomePage> {
             place,
             'condition',
           )?.toString(),
+          initialIsFree: PlaceInfo.feeStatus(place),
+          canEditFee: PlaceInfo.hasToilet(place),
           initialPaper: _nullableBool(
             PlaceInfo.effectiveValue(place, 'has_paper'),
           ),
@@ -1579,6 +1581,7 @@ class _HomePageState extends State<HomePage> {
         username: username!,
         cleanliness: draft.cleanliness,
         condition: draft.condition,
+        isFree: draft.isFree,
         hasToilet: draft.hasToilet,
         hasPaper: draft.hasPaper,
         hasSoap: draft.hasSoap,
@@ -1948,8 +1951,8 @@ class _HomePageState extends State<HomePage> {
 
                     final double lng = (toilet['lng'] as num).toDouble();
 
-                    final bool isFree = toilet['is_free'] == true;
-                    final bool feeKnown = toilet['fee_known'] != false;
+                    final bool isFree = PlaceInfo.feeStatus(toilet) == true;
+                    final bool feeKnown = PlaceInfo.feeKnown(toilet);
                     final placeKind = PlaceInfo.kindOf(toilet);
                     final placeKey = PlaceInfo.keyOf(toilet);
 
@@ -4632,6 +4635,7 @@ class _InstallStep extends StatelessWidget {
 class _PlaceReportDraft {
   final int cleanliness;
   final String condition;
+  final bool? isFree;
   final bool? hasToilet;
   final bool? hasPaper;
   final bool? hasSoap;
@@ -4643,6 +4647,7 @@ class _PlaceReportDraft {
   const _PlaceReportDraft({
     required this.cleanliness,
     required this.condition,
+    required this.isFree,
     required this.hasToilet,
     required this.hasPaper,
     required this.hasSoap,
@@ -4659,6 +4664,8 @@ class _PlaceReportSheet extends StatefulWidget {
   final bool? initialHasToilet;
   final int? initialCleanliness;
   final String? initialCondition;
+  final bool? initialIsFree;
+  final bool canEditFee;
   final bool? initialPaper;
   final bool? initialSoap;
   final bool? initialWheelchair;
@@ -4671,6 +4678,8 @@ class _PlaceReportSheet extends StatefulWidget {
     required this.initialHasToilet,
     required this.initialCleanliness,
     required this.initialCondition,
+    required this.initialIsFree,
+    required this.canEditFee,
     required this.initialPaper,
     required this.initialSoap,
     required this.initialWheelchair,
@@ -4685,6 +4694,7 @@ class _PlaceReportSheet extends StatefulWidget {
 class _PlaceReportSheetState extends State<_PlaceReportSheet> {
   late int cleanliness;
   late String condition;
+  late bool? isFree;
   late bool? hasToilet;
   late bool? hasPaper;
   late bool? hasSoap;
@@ -4714,6 +4724,7 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
     condition = conditions.contains(widget.initialCondition)
         ? widget.initialCondition!
         : 'Среднее';
+    isFree = widget.initialIsFree;
     hasToilet = widget.initialHasToilet;
     hasPaper = widget.initialPaper;
     hasSoap = widget.initialSoap;
@@ -4743,6 +4754,7 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
       _PlaceReportDraft(
         cleanliness: cleanliness,
         condition: condition,
+        isFree: isFree,
         hasToilet: hasToilet,
         hasPaper: hasPaper,
         hasSoap: hasSoap,
@@ -4866,6 +4878,40 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
                     icon: Icons.wc_rounded,
                     value: hasToilet,
                     onChanged: (value) => setState(() => hasToilet = value),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                if (widget.canEditFee || hasToilet == true) ...[
+                  DropdownButtonFormField<String>(
+                    initialValue: isFree == null
+                        ? 'unknown'
+                        : isFree!
+                        ? 'free'
+                        : 'paid',
+                    decoration: const InputDecoration(
+                      labelText: 'Стоимость туалета',
+                      prefixIcon: Icon(Icons.payments_outlined),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'free',
+                        child: Text('Бесплатный'),
+                      ),
+                      DropdownMenuItem(value: 'paid', child: Text('Платный')),
+                      DropdownMenuItem(
+                        value: 'unknown',
+                        child: Text('Не знаю'),
+                      ),
+                    ],
+                    onChanged: (selection) {
+                      setState(() {
+                        isFree = switch (selection) {
+                          'free' => true,
+                          'paid' => false,
+                          _ => null,
+                        };
+                      });
+                    },
                   ),
                   const SizedBox(height: 12),
                 ],

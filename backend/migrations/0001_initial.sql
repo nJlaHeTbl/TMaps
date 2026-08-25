@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS toilet_reports (
   username TEXT NOT NULL CHECK (length(trim(username)) BETWEEN 2 AND 30),
   cleanliness INTEGER NOT NULL CHECK (cleanliness BETWEEN 1 AND 5),
   condition TEXT NOT NULL CHECK (condition IN ('Хорошее', 'Среднее', 'Плохое')),
+  is_free INTEGER CHECK (is_free IS NULL OR is_free IN (0, 1)),
   has_toilet INTEGER CHECK (has_toilet IS NULL OR has_toilet IN (0, 1)),
   has_paper INTEGER CHECK (has_paper IS NULL OR has_paper IN (0, 1)),
   has_soap INTEGER CHECK (has_soap IS NULL OR has_soap IN (0, 1)),

@@ -31,18 +31,28 @@ class LiveLocationService {
       }
 
       var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied && requestPermission) {
+      if ((permission == LocationPermission.denied ||
+              permission == LocationPermission.unableToDetermine) &&
+          requestPermission) {
         permission = await Geolocator.requestPermission();
       }
 
       if (permission == LocationPermission.deniedForever) {
         return const LocationStartResult(LocationAccessState.deniedForever);
       }
-      if (permission == LocationPermission.denied) {
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.unableToDetermine) {
         return const LocationStartResult(LocationAccessState.permissionNeeded);
       }
 
-      Position? firstPosition = await Geolocator.getLastKnownPosition();
+      Position? firstPosition;
+      if (!kIsWeb) {
+        try {
+          firstPosition = await Geolocator.getLastKnownPosition();
+        } on Object catch (error) {
+          debugPrint('Last known location unavailable: $error');
+        }
+      }
       try {
         firstPosition = await Geolocator.getCurrentPosition(
           locationSettings: _currentLocationSettings(),
@@ -77,14 +87,14 @@ class LiveLocationService {
       return WebSettings(
         accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: 0,
-        maximumAge: Duration.zero,
-        timeLimit: const Duration(seconds: 15),
+        maximumAge: const Duration(seconds: 30),
+        timeLimit: const Duration(seconds: 20),
       );
     }
     return const LocationSettings(
       accuracy: LocationAccuracy.bestForNavigation,
       distanceFilter: 0,
-      timeLimit: Duration(seconds: 15),
+      timeLimit: Duration(seconds: 20),
     );
   }
 

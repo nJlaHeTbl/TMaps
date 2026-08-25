@@ -146,6 +146,24 @@ class PlaceInfo {
     return latestReport(place)?[key] ?? place[key];
   }
 
+  static bool? feeStatus(Map<String, dynamic> place) {
+    final value = effectiveValue(place, 'is_free');
+    if (value is bool) return value;
+    if (value is num) return value == 1;
+    return switch (value?.toString().toLowerCase()) {
+      'true' || '1' || 'yes' => true,
+      'false' || '0' || 'no' => false,
+      _ => null,
+    };
+  }
+
+  static bool feeKnown(Map<String, dynamic> place) {
+    final reportedFee = latestReport(place)?['is_free'];
+    if (reportedFee is bool || reportedFee is num) return true;
+    if (place['fee_known'] == false) return false;
+    return feeStatus(place) != null;
+  }
+
   static int reportCount(Map<String, dynamic> place) {
     return (place['report_count'] as num?)?.toInt() ?? 0;
   }

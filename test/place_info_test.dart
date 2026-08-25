@@ -86,5 +86,16 @@ void main() {
       expect(PlaceInfo.hasToilet(place), isTrue);
       expect(PlaceInfo.accessLabel(place), 'Для клиентов');
     });
+
+    test('latest community report overrides the toilet fee', () {
+      final place = {
+        'is_free': true,
+        'fee_known': false,
+        'latest_report': {'is_free': false},
+      };
+
+      expect(PlaceInfo.feeStatus(place), isFalse);
+      expect(PlaceInfo.feeKnown(place), isTrue);
+    });
   });
 }

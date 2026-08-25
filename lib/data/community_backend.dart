@@ -25,6 +25,7 @@ abstract interface class CommunityBackend {
     required String username,
     required int cleanliness,
     required String condition,
+    required bool? isFree,
     required bool? hasToilet,
     required bool? hasPaper,
     required bool? hasSoap,

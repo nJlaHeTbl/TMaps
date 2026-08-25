@@ -282,7 +282,7 @@ class _PlaceSearchTile extends StatelessWidget {
     final kind = PlaceInfo.kindOf(place);
     final hasToilet = PlaceInfo.hasToilet(place);
     final feeKnown = place['fee_known'] == true;
-    final isFree = place['is_free'] == true;
+    final isFree = PlaceInfo.feeStatus(place) == true;
     final drinkingWater = PlaceInfo.drinkingWater(place);
     final scheme = Theme.of(context).colorScheme;
 
