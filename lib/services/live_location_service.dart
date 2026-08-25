@@ -12,7 +12,11 @@ enum LocationAccessState {
 }
 
 class LocationStartResult {
-  const LocationStartResult(this.state, {this.position});
+  const LocationStartResult(this.state, {this.position})
+    : assert(
+        state != LocationAccessState.ready || position != null,
+        'A ready location result must contain a position',
+      );
 
   final LocationAccessState state;
   final Position? position;
@@ -45,6 +49,22 @@ class LiveLocationService {
         return const LocationStartResult(LocationAccessState.permissionNeeded);
       }
 
+      await _subscription?.cancel();
+
+      Position? livePosition;
+      _subscription =
+          Geolocator.getPositionStream(
+            locationSettings: _streamLocationSettings(),
+          ).listen(
+            (position) {
+              livePosition ??= position;
+              _positions.add(position);
+            },
+            onError: (Object error, StackTrace stackTrace) {
+              debugPrint('Live location stream error: $error');
+            },
+          );
+
       Position? firstPosition;
       if (!kIsWeb) {
         try {
@@ -58,19 +78,16 @@ class LiveLocationService {
           locationSettings: _currentLocationSettings(),
         );
       } on TimeoutException {
-        // A last-known fix is useful while the live stream warms up.
+        debugPrint('Current location request timed out');
+      } on Object catch (error) {
+        debugPrint('Current location unavailable: $error');
       }
 
-      await _subscription?.cancel();
-      _subscription =
-          Geolocator.getPositionStream(
-            locationSettings: _streamLocationSettings(),
-          ).listen(
-            _positions.add,
-            onError: (Object error, StackTrace stackTrace) {
-              debugPrint('Live location stream error: $error');
-            },
-          );
+      firstPosition ??= livePosition;
+
+      if (firstPosition == null) {
+        return const LocationStartResult(LocationAccessState.unavailable);
+      }
 
       return LocationStartResult(
         LocationAccessState.ready,
