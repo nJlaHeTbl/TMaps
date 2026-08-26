@@ -68,6 +68,14 @@ begin
     raise exception 'Неизвестная точка';
   end if;
 
+  if char_length(trim(p_username)) not between 2 and 30 then
+    raise exception 'Имя должно содержать от 2 до 30 символов';
+  end if;
+
+  if p_comment is not null and char_length(trim(p_comment)) > 300 then
+    raise exception 'Комментарий слишком длинный';
+  end if;
+
   if abs(p_current_lat - p_proposed_lat) < 0.000001
      and abs(p_current_lng - p_proposed_lng) < 0.000001 then
     raise exception 'Передвинь метку в новое место';

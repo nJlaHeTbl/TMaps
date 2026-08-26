@@ -34,11 +34,21 @@ class LiveLocationService {
         return const LocationStartResult(LocationAccessState.servicesDisabled);
       }
 
+      Position? firstPosition;
       var permission = await Geolocator.checkPermission();
       if ((permission == LocationPermission.denied ||
               permission == LocationPermission.unableToDetermine) &&
           requestPermission) {
-        permission = await Geolocator.requestPermission();
+        if (kIsWeb) {
+          firstPosition = await _requestWebPosition();
+          if (firstPosition != null) {
+            permission = LocationPermission.whileInUse;
+          } else {
+            permission = await Geolocator.checkPermission();
+          }
+        } else {
+          permission = await Geolocator.requestPermission();
+        }
       }
 
       if (permission == LocationPermission.deniedForever) {
@@ -51,43 +61,30 @@ class LiveLocationService {
 
       await _subscription?.cancel();
 
-      Position? livePosition;
-      _subscription =
-          Geolocator.getPositionStream(
-            locationSettings: _streamLocationSettings(),
-          ).listen(
-            (position) {
-              livePosition ??= position;
-              _positions.add(position);
-            },
-            onError: (Object error, StackTrace stackTrace) {
-              debugPrint('Live location stream error: $error');
-            },
-          );
-
-      Position? firstPosition;
+      Position? lastKnownPosition;
       if (!kIsWeb) {
         try {
-          firstPosition = await Geolocator.getLastKnownPosition();
+          lastKnownPosition = await Geolocator.getLastKnownPosition();
         } on Object catch (error) {
           debugPrint('Last known location unavailable: $error');
         }
       }
-      try {
-        firstPosition = await Geolocator.getCurrentPosition(
-          locationSettings: _currentLocationSettings(),
-        );
-      } on TimeoutException {
-        debugPrint('Current location request timed out');
-      } on Object catch (error) {
-        debugPrint('Current location unavailable: $error');
-      }
-
-      firstPosition ??= livePosition;
+      firstPosition ??= await _readCurrentPosition();
+      firstPosition ??= lastKnownPosition;
 
       if (firstPosition == null) {
         return const LocationStartResult(LocationAccessState.unavailable);
       }
+
+      _subscription =
+          Geolocator.getPositionStream(
+            locationSettings: _streamLocationSettings(),
+          ).listen(
+            _positions.add,
+            onError: (Object error, StackTrace stackTrace) {
+              debugPrint('Live location stream error: $error');
+            },
+          );
 
       return LocationStartResult(
         LocationAccessState.ready,
@@ -97,6 +94,44 @@ class LiveLocationService {
       debugPrint('Location startup error: $error');
       return const LocationStartResult(LocationAccessState.unavailable);
     }
+  }
+
+  Future<Position?> _requestWebPosition() async {
+    try {
+      return await Geolocator.getCurrentPosition(
+        locationSettings: _webFallbackSettings(),
+      );
+    } on TimeoutException {
+      debugPrint('Web permission location request timed out');
+    } on Object catch (error) {
+      debugPrint('Web permission location request unavailable: $error');
+    }
+    return null;
+  }
+
+  Future<Position?> _readCurrentPosition() async {
+    try {
+      return await Geolocator.getCurrentPosition(
+        locationSettings: _currentLocationSettings(),
+      );
+    } on TimeoutException {
+      debugPrint('Current location request timed out');
+    } on Object catch (error) {
+      debugPrint('Current location unavailable: $error');
+    }
+
+    if (kIsWeb) {
+      try {
+        return await Geolocator.getCurrentPosition(
+          locationSettings: _webFallbackSettings(),
+        );
+      } on TimeoutException {
+        debugPrint('Fallback web location request timed out');
+      } on Object catch (error) {
+        debugPrint('Fallback web location unavailable: $error');
+      }
+    }
+    return null;
   }
 
   LocationSettings _currentLocationSettings() {
@@ -126,6 +161,15 @@ class LiveLocationService {
     return const LocationSettings(
       accuracy: LocationAccuracy.bestForNavigation,
       distanceFilter: 3,
+    );
+  }
+
+  WebSettings _webFallbackSettings() {
+    return WebSettings(
+      accuracy: LocationAccuracy.medium,
+      distanceFilter: 0,
+      maximumAge: Duration(minutes: 5),
+      timeLimit: Duration(seconds: 25),
     );
   }
 
