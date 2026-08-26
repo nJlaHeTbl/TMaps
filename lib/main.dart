@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -30,6 +31,7 @@ import 'services/route_service.dart';
 import 'services/submission_history_service.dart';
 import 'services/theme_preference_service.dart';
 import 'widgets/map_overlays.dart';
+import 'widgets/location_help_sheet.dart';
 import 'widgets/place_search_sheet.dart';
 
 bool? _nullableBool(dynamic value) {
@@ -589,6 +591,27 @@ class _HomePageState extends State<HomePage> {
     if (!mounted || locationFound) return;
 
     setState(() => _followUser = false);
+    await _presentLocationHelp();
+  }
+
+  Future<void> _presentLocationHelp() async {
+    if (!mounted) return;
+
+    if (kIsWeb || _locationState == LocationAccessState.deniedForever) {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => LocationHelpSheet(
+          isWeb: kIsWeb,
+          permissionBlocked:
+              _locationState == LocationAccessState.deniedForever,
+          onRetry: centerOnUser,
+        ),
+      );
+      return;
+    }
+
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(_locationHelpMessage)));
@@ -596,13 +619,19 @@ class _HomePageState extends State<HomePage> {
 
   String get _locationHelpMessage => switch (_locationState) {
     LocationAccessState.permissionNeeded =>
-      'Нажми «Включить GPS» и разреши доступ к геопозиции',
+      kIsWeb
+          ? 'Нажми и разреши геопозицию в браузере'
+          : 'Нажми «Включить GPS» и разреши доступ к геопозиции',
     LocationAccessState.deniedForever =>
-      'Разреши геопозицию для TMaps в настройках телефона',
+      kIsWeb
+          ? 'Доступ заблокирован — нажми, чтобы исправить'
+          : 'Разреши геопозицию для TMaps в настройках телефона',
     LocationAccessState.servicesDisabled =>
       'Включи GPS на телефоне и повтори попытку',
     LocationAccessState.unavailable =>
-      'Не удалось получить координаты. Проверь GPS и интернет',
+      kIsWeb
+          ? 'Нет координат — проверь разрешение браузера'
+          : 'Не удалось получить координаты. Проверь GPS и интернет',
     LocationAccessState.ready => 'Геопозиция работает',
   };
 
@@ -1218,9 +1247,7 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       if (!locationFound) {
         setState(() => isAddingToilet = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(_locationHelpMessage)));
+        await _presentLocationHelp();
         return;
       }
       await _showAddPlaceForm(currentPosition);
