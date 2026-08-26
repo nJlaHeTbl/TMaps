@@ -31,9 +31,15 @@ final class HttpCommunityBackend implements CommunityBackend {
     required double longitude,
     required String username,
     required PlaceKind placeKind,
+    required String? name,
     required bool isFree,
     required int cleanliness,
     required String condition,
+    required bool? hasPaper,
+    required bool? hasSoap,
+    required bool? wheelchairAccessible,
+    required bool? phoneCharging,
+    required String accessType,
     String? comment,
   }) async {
     final payload = await _send('/api/submissions', {
@@ -41,9 +47,15 @@ final class HttpCommunityBackend implements CommunityBackend {
       'lng': longitude,
       'username': username,
       'placeKind': PlaceInfo.valueOfKind(placeKind),
+      'name': name,
       'isFree': isFree,
       'cleanliness': cleanliness,
       'condition': condition,
+      'hasPaper': hasPaper,
+      'hasSoap': hasSoap,
+      'wheelchairAccessible': wheelchairAccessible,
+      'phoneCharging': phoneCharging,
+      'accessType': accessType,
       'comment': comment,
     });
     return (payload['id'] as num).toInt();

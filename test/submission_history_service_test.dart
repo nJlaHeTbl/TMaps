@@ -14,9 +14,15 @@ void main() {
       longitude: 78.39,
       username: 'Мирас',
       placeKind: 'community_toilet',
+      name: 'Туалет у пляжа',
       isFree: true,
       cleanliness: 4,
       condition: 'Хорошее',
+      hasPaper: false,
+      hasSoap: false,
+      wheelchairAccessible: false,
+      phoneCharging: false,
+      accessType: 'public',
       comment: 'Вход со двора',
       createdAt: createdAt,
     );
@@ -27,6 +33,8 @@ void main() {
     expect(restored, hasLength(1));
     expect(restored.single.id, 7);
     expect(restored.single.latitude, 45.01);
+    expect(restored.single.name, 'Туалет у пляжа');
+    expect(restored.single.hasPaper, isFalse);
     expect(restored.single.comment, 'Вход со двора');
     expect(restored.single.status, 'pending');
     expect(restored.single.createdAt, createdAt);

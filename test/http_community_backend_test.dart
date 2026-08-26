@@ -38,6 +38,7 @@ void main() {
         expect(request.url.path, '/api/submissions');
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         expect(body['placeKind'], 'community_toilet');
+        expect(body['name'], isNull);
         expect(body['isFree'], true);
         return http.Response(jsonEncode({'id': 42, 'status': 'pending'}), 201);
       }),
@@ -48,12 +49,50 @@ void main() {
       longitude: 78.3739,
       username: 'Асылбек',
       placeKind: PlaceKind.communityToilet,
+      name: null,
       isFree: true,
       cleanliness: 4,
       condition: 'Хорошее',
+      hasPaper: null,
+      hasSoap: null,
+      wheelchairAccessible: null,
+      phoneCharging: null,
+      accessType: 'public',
     );
 
     expect(id, 42);
+  });
+
+  test('sends a named cafe submission with access details', () async {
+    final backend = HttpCommunityBackend(
+      baseUrl: 'https://api.tmaps.test',
+      client: MockClient((request) async {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['placeKind'], 'cafe');
+        expect(body['name'], 'Кофейня у парка');
+        expect(body['accessType'], 'customers');
+        expect(body['phoneCharging'], true);
+        return http.Response(jsonEncode({'id': 51, 'status': 'pending'}), 201);
+      }),
+    );
+
+    final id = await backend.submitPlace(
+      latitude: 45.0156,
+      longitude: 78.3739,
+      username: 'Мирас',
+      placeKind: PlaceKind.cafe,
+      name: 'Кофейня у парка',
+      isFree: true,
+      cleanliness: 5,
+      condition: 'Хорошее',
+      hasPaper: null,
+      hasSoap: null,
+      wheelchairAccessible: null,
+      phoneCharging: true,
+      accessType: 'customers',
+    );
+
+    expect(id, 51);
   });
 
   test('shows a readable server error', () async {

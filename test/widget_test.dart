@@ -47,5 +47,12 @@ void main() {
       ),
       hasLength(8),
     );
+    final beachToilet = places.cast<Map<String, dynamic>>().singleWhere(
+      (place) =>
+          place['source_id'] == 'user-report/taldykorgan-city-beach-2026-08-26',
+    );
+    expect(beachToilet['place_kind'], 'public_toilet');
+    expect(beachToilet['cleanliness'], 3);
+    expect(beachToilet['has_paper'], isFalse);
   });
 }

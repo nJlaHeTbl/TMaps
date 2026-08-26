@@ -12,9 +12,15 @@ abstract interface class CommunityBackend {
     required double longitude,
     required String username,
     required PlaceKind placeKind,
+    required String? name,
     required bool isFree,
     required int cleanliness,
     required String condition,
+    required bool? hasPaper,
+    required bool? hasSoap,
+    required bool? wheelchairAccessible,
+    required bool? phoneCharging,
+    required String accessType,
     String? comment,
   });
 

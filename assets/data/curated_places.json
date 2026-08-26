@@ -1,7 +1,7 @@
 {
   "source": "TMaps curated public listings",
-  "generated_at": "2026-08-17T12:30:00Z",
-  "count": 8,
+  "generated_at": "2026-08-26T15:45:00Z",
+  "count": 9,
   "places": [
     {
       "lat": 45.003364,
@@ -170,6 +170,29 @@
       "source_id": "2gis/70000001080358294",
       "source_url": "https://2gis.kz/almaty/firm/70000001080358294",
       "verified_at": "2026-08-17"
+    },
+    {
+      "lat": 45.019598,
+      "lng": 78.399912,
+      "name": "Общественный туалет у городского пляжа",
+      "place_kind": "public_toilet",
+      "toilet_type": "outdoor_park",
+      "has_toilet": true,
+      "is_free": true,
+      "fee_known": true,
+      "access_type": "public",
+      "cleanliness": 3,
+      "condition": "Плохое",
+      "has_paper": false,
+      "has_soap": false,
+      "wheelchair_accessible": false,
+      "phone_charging": false,
+      "comment": "Уличный туалет рядом с городским пляжем. Бумаги и мыла обычно нет; состояние можно уточнить через карточку места.",
+      "username": "Сообщено пользователем TMaps",
+      "source": "curated",
+      "source_id": "user-report/taldykorgan-city-beach-2026-08-26",
+      "source_url": "https://yandex.kz/maps/org/ja_aja_/177259273507/",
+      "verified_at": "2026-08-26"
     }
   ]
 }

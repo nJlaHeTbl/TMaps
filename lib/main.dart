@@ -19,6 +19,7 @@ import 'core/map_display_policy.dart';
 import 'core/map_marker_clustering.dart';
 import 'core/map_tile_policy.dart';
 import 'core/place_info.dart';
+import 'core/place_submission_defaults.dart';
 import 'core/place_visibility_policy.dart';
 import 'data/http_community_backend.dart';
 import 'data/supabase_community_backend.dart';
@@ -182,14 +183,20 @@ class _HomePageState extends State<HomePage> {
       'lat': submission.latitude,
       'lng': submission.longitude,
       'username': submission.username,
-      'name': 'Моя заявка #${submission.id}',
+      'name': submission.name?.trim().isNotEmpty == true
+          ? submission.name
+          : 'Моя заявка #${submission.id}',
       'place_kind': kind,
       'has_toilet': kind == 'community_toilet',
-      'access_type': 'public',
+      'access_type': submission.accessType,
       'is_free': submission.isFree,
-      'fee_known': true,
+      'fee_known': kind == 'community_toilet',
       'cleanliness': submission.cleanliness,
       'condition': submission.condition,
+      'has_paper': submission.hasPaper,
+      'has_soap': submission.hasSoap,
+      'wheelchair_accessible': submission.wheelchairAccessible,
+      'phone_charging': submission.phoneCharging,
       'comment': submission.comment,
       'source': 'pending_submission',
       'created_at': submission.createdAt.toIso8601String(),
@@ -1289,11 +1296,19 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _showAddPlaceForm(LatLng position) async {
     try {
-      var isFree = true;
-      var cleanliness = 5;
-      var condition = 'Хорошее';
-      var comment = '';
+      var placeName = '';
       var placeKind = PlaceKind.communityToilet;
+      var outdoorToilet = false;
+      var defaults = PlaceSubmissionDefaults.forKind(placeKind);
+      var isFree = defaults.isFree;
+      var cleanliness = defaults.rating;
+      var condition = defaults.condition;
+      var hasPaper = defaults.hasPaper;
+      var hasSoap = defaults.hasSoap;
+      var wheelchairAccessible = defaults.wheelchairAccessible;
+      var phoneCharging = defaults.phoneCharging;
+      var accessType = defaults.accessType;
+      var comment = '';
 
       final result = await showModalBottomSheet<bool>(
         context: context,
@@ -1302,16 +1317,50 @@ class _HomePageState extends State<HomePage> {
         builder: (context) {
           return StatefulBuilder(
             builder: (context, setDialogState) {
-              return _AddToiletSheet(
+              return _AddPlaceSheet(
                 position: position,
                 placeKind: placeKind,
+                placeName: placeName,
+                outdoorToilet: outdoorToilet,
                 isFree: isFree,
                 cleanliness: cleanliness,
                 condition: condition,
+                hasPaper: hasPaper,
+                hasSoap: hasSoap,
+                wheelchairAccessible: wheelchairAccessible,
+                phoneCharging: phoneCharging,
+                accessType: accessType,
                 comment: comment,
                 onPlaceKindChanged: (value) {
                   setDialogState(() {
                     placeKind = value;
+                    outdoorToilet = false;
+                    defaults = PlaceSubmissionDefaults.forKind(value);
+                    isFree = defaults.isFree;
+                    cleanliness = defaults.rating;
+                    condition = defaults.condition;
+                    hasPaper = defaults.hasPaper;
+                    hasSoap = defaults.hasSoap;
+                    wheelchairAccessible = defaults.wheelchairAccessible;
+                    phoneCharging = defaults.phoneCharging;
+                    accessType = defaults.accessType;
+                  });
+                },
+                onPlaceNameChanged: (value) => placeName = value,
+                onOutdoorToiletChanged: (value) {
+                  setDialogState(() {
+                    outdoorToilet = value;
+                    defaults = value
+                        ? PlaceSubmissionDefaults.outdoorToilet
+                        : PlaceSubmissionDefaults.forKind(placeKind);
+                    isFree = defaults.isFree;
+                    cleanliness = defaults.rating;
+                    condition = defaults.condition;
+                    hasPaper = defaults.hasPaper;
+                    hasSoap = defaults.hasSoap;
+                    wheelchairAccessible = defaults.wheelchairAccessible;
+                    phoneCharging = defaults.phoneCharging;
+                    accessType = defaults.accessType;
                   });
                 },
                 onFreeChanged: (value) {
@@ -1329,6 +1378,21 @@ class _HomePageState extends State<HomePage> {
                     condition = value;
                   });
                 },
+                onPaperChanged: (value) {
+                  setDialogState(() => hasPaper = value);
+                },
+                onSoapChanged: (value) {
+                  setDialogState(() => hasSoap = value);
+                },
+                onWheelchairChanged: (value) {
+                  setDialogState(() => wheelchairAccessible = value);
+                },
+                onPhoneChargingChanged: (value) {
+                  setDialogState(() => phoneCharging = value);
+                },
+                onAccessTypeChanged: (value) {
+                  setDialogState(() => accessType = value);
+                },
                 onCommentChanged: (value) {
                   comment = value;
                 },
@@ -1336,6 +1400,19 @@ class _HomePageState extends State<HomePage> {
                   Navigator.of(context).pop(false);
                 },
                 onAdd: () {
+                  final requiresName =
+                      placeKind == PlaceKind.cafe ||
+                      placeKind == PlaceKind.fuel ||
+                      placeKind == PlaceKind.organization;
+                  if (requiresName && placeName.trim().length < 2) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        behavior: SnackBarBehavior.floating,
+                        content: Text('Напиши название места или организации'),
+                      ),
+                    );
+                    return;
+                  }
                   final issue = ContentGuard.validateComment(comment);
                   if (issue != null) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -1361,9 +1438,15 @@ class _HomePageState extends State<HomePage> {
         longitude: position.longitude,
         username: username!,
         placeKind: placeKind,
+        name: placeName.trim().isEmpty ? null : placeName.trim(),
         isFree: isFree,
         cleanliness: cleanliness,
         condition: condition,
+        hasPaper: hasPaper,
+        hasSoap: hasSoap,
+        wheelchairAccessible: wheelchairAccessible,
+        phoneCharging: phoneCharging,
+        accessType: accessType,
         comment: comment.trim().isEmpty ? null : comment.trim(),
       );
 
@@ -1373,9 +1456,15 @@ class _HomePageState extends State<HomePage> {
         longitude: position.longitude,
         username: username!,
         placeKind: PlaceInfo.valueOfKind(placeKind),
+        name: placeName.trim().isEmpty ? null : placeName.trim(),
         isFree: isFree,
         cleanliness: cleanliness,
         condition: condition,
+        hasPaper: hasPaper,
+        hasSoap: hasSoap,
+        wheelchairAccessible: wheelchairAccessible,
+        phoneCharging: phoneCharging,
+        accessType: accessType,
         comment: comment.trim().isEmpty ? null : comment.trim(),
         createdAt: DateTime.now().toUtc(),
       );
@@ -1412,7 +1501,7 @@ class _HomePageState extends State<HomePage> {
         ),
       );
     } catch (e) {
-      debugPrint('Ошибка добавления туалета: $e');
+      debugPrint('Ошибка добавления места: $e');
 
       if (!mounted) return;
 
@@ -2118,9 +2207,9 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 12),
                     _MapActionButton(
-                      icon: Icons.my_location_rounded,
+                      icon: Icons.gps_fixed_rounded,
                       onPressed: centerOnUser,
-                      tooltip: 'Моё местоположение',
+                      tooltip: 'GPS — показать меня',
                       backgroundColor: _followUser
                           ? AppPalette.sky
                           : scheme.surface,
@@ -2145,9 +2234,13 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 12),
                     _MapActionButton(
-                      icon: Icons.near_me_rounded,
+                      icon: Icons.wc_rounded,
                       onPressed: isFindingNearest ? null : showNearestToilet,
-                      tooltip: 'Ближайший туалет',
+                      tooltip: 'WC — ближайший туалет',
+                      backgroundColor: green.withValues(
+                        alpha: isDark ? 0.26 : 0.13,
+                      ),
+                      foregroundColor: green,
                       child: isFindingNearest
                           ? const SizedBox(
                               width: 21,
@@ -2158,6 +2251,18 @@ class _HomePageState extends State<HomePage> {
                             )
                           : null,
                     ),
+                    if (_submissionHistory.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _MapActionButton(
+                        icon: Icons.fact_check_rounded,
+                        onPressed: showSubmissionHistory,
+                        tooltip: 'Мои заявки: ${_submissionHistory.length}',
+                        backgroundColor: const Color(
+                          0xFF2563EB,
+                        ).withValues(alpha: isDark ? 0.28 : 0.13),
+                        foregroundColor: const Color(0xFF2563EB),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     _MapActionButton(
                       icon: Icons.add_rounded,
@@ -2240,10 +2345,16 @@ class _HomePageState extends State<HomePage> {
               right: 90,
               bottom: 92,
               child: SafeArea(
-                child: LocationPromptCard(
-                  title: 'GPS не включён',
-                  message: _locationHelpMessage,
-                  onEnable: centerOnUser,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: LocationPromptCard(
+                      title: 'GPS не включён',
+                      message: _locationHelpMessage,
+                      onEnable: centerOnUser,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -5021,6 +5132,7 @@ class _TriStateField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
+      key: ValueKey('$label-${value ?? 'unknown'}'),
       initialValue: value == null
           ? 'unknown'
           : value!
@@ -5164,10 +5276,38 @@ class _SubmissionHistorySheet extends StatelessWidget {
                   final place = <String, dynamic>{
                     'place_kind': submission.placeKind,
                   };
-                  final categoryTitle = switch (PlaceInfo.kindOf(place)) {
-                    PlaceKind.phoneCharging => 'Зарядка телефона',
-                    PlaceKind.evCharging => 'Электрозарядка',
-                    _ => 'Новый туалет',
+                  final categoryTitle =
+                      submission.name?.trim().isNotEmpty == true
+                      ? submission.name!
+                      : switch (PlaceInfo.kindOf(place)) {
+                          PlaceKind.cafe => 'Новое кафе',
+                          PlaceKind.fuel => 'Новая АЗС',
+                          PlaceKind.organization => 'Новая организация',
+                          PlaceKind.phoneCharging => 'Зарядка телефона',
+                          PlaceKind.evCharging => 'Электрозарядка',
+                          PlaceKind.water => 'Точка питьевой воды',
+                          _ => 'Новый туалет',
+                        };
+                  final (
+                    statusLabel,
+                    statusIcon,
+                    statusColor,
+                  ) = switch (submission.status) {
+                    'approved' => (
+                      'Одобрено и опубликовано',
+                      Icons.verified_rounded,
+                      const Color(0xFF15803D),
+                    ),
+                    'rejected' => (
+                      'Нужно уточнение',
+                      Icons.info_outline_rounded,
+                      const Color(0xFFDC2626),
+                    ),
+                    _ => (
+                      'Ожидает проверки',
+                      Icons.hourglass_top_rounded,
+                      const Color(0xFFD97706),
+                    ),
                   };
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
@@ -5185,15 +5325,10 @@ class _SubmissionHistorySheet extends StatelessWidget {
                                 width: 46,
                                 height: 46,
                                 decoration: BoxDecoration(
-                                  color: const Color(
-                                    0xFFF59E0B,
-                                  ).withValues(alpha: 0.14),
+                                  color: statusColor.withValues(alpha: 0.14),
                                   borderRadius: BorderRadius.circular(15),
                                 ),
-                                child: const Icon(
-                                  Icons.hourglass_top_rounded,
-                                  color: Color(0xFFD97706),
-                                ),
+                                child: Icon(statusIcon, color: statusColor),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -5211,12 +5346,12 @@ class _SubmissionHistorySheet extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      'Ожидает проверки · '
+                                      '$statusLabel · '
                                       '${date.day.toString().padLeft(2, '0')}.'
                                       '${date.month.toString().padLeft(2, '0')}.'
                                       '${date.year}',
-                                      style: const TextStyle(
-                                        color: Color(0xFFD97706),
+                                      style: TextStyle(
+                                        color: statusColor,
                                         fontSize: 12,
                                         fontWeight: FontWeight.w800,
                                       ),
@@ -5256,34 +5391,62 @@ class _SubmissionHistorySheet extends StatelessWidget {
 // ФОРМА ДОБАВЛЕНИЯ
 // =============================================================
 
-class _AddToiletSheet extends StatelessWidget {
+class _AddPlaceSheet extends StatelessWidget {
   final LatLng position;
   final PlaceKind placeKind;
+  final String placeName;
+  final bool outdoorToilet;
   final bool isFree;
   final int cleanliness;
   final String condition;
+  final bool? hasPaper;
+  final bool? hasSoap;
+  final bool? wheelchairAccessible;
+  final bool? phoneCharging;
+  final String accessType;
   final String comment;
 
   final ValueChanged<PlaceKind> onPlaceKindChanged;
+  final ValueChanged<String> onPlaceNameChanged;
+  final ValueChanged<bool> onOutdoorToiletChanged;
   final ValueChanged<bool> onFreeChanged;
   final ValueChanged<int> onCleanlinessChanged;
   final ValueChanged<String> onConditionChanged;
+  final ValueChanged<bool?> onPaperChanged;
+  final ValueChanged<bool?> onSoapChanged;
+  final ValueChanged<bool?> onWheelchairChanged;
+  final ValueChanged<bool?> onPhoneChargingChanged;
+  final ValueChanged<String> onAccessTypeChanged;
   final ValueChanged<String> onCommentChanged;
 
   final VoidCallback onCancel;
   final VoidCallback onAdd;
 
-  const _AddToiletSheet({
+  const _AddPlaceSheet({
     required this.position,
     required this.placeKind,
+    required this.placeName,
+    required this.outdoorToilet,
     required this.isFree,
     required this.cleanliness,
     required this.condition,
+    required this.hasPaper,
+    required this.hasSoap,
+    required this.wheelchairAccessible,
+    required this.phoneCharging,
+    required this.accessType,
     required this.comment,
     required this.onPlaceKindChanged,
+    required this.onPlaceNameChanged,
+    required this.onOutdoorToiletChanged,
     required this.onFreeChanged,
     required this.onCleanlinessChanged,
     required this.onConditionChanged,
+    required this.onPaperChanged,
+    required this.onSoapChanged,
+    required this.onWheelchairChanged,
+    required this.onPhoneChargingChanged,
+    required this.onAccessTypeChanged,
     required this.onCommentChanged,
     required this.onCancel,
     required this.onAdd,
@@ -5294,6 +5457,21 @@ class _AddToiletSheet extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final isToilet = placeKind == PlaceKind.communityToilet;
     final (placeIcon, placeColor, placeTitle) = switch (placeKind) {
+      PlaceKind.cafe => (
+        Icons.restaurant_rounded,
+        const Color(0xFFEA580C),
+        'Кафе или ресторан',
+      ),
+      PlaceKind.fuel => (
+        Icons.local_gas_station_rounded,
+        const Color(0xFF7C3AED),
+        'Автозаправка',
+      ),
+      PlaceKind.organization => (
+        Icons.apartment_rounded,
+        const Color(0xFF0F766E),
+        'Организация',
+      ),
       PlaceKind.phoneCharging => (
         Icons.battery_charging_full_rounded,
         const Color(0xFF2563EB),
@@ -5303,6 +5481,11 @@ class _AddToiletSheet extends StatelessWidget {
         Icons.ev_station_rounded,
         const Color(0xFF0891B2),
         'Электрозарядка',
+      ),
+      PlaceKind.water => (
+        Icons.water_drop_rounded,
+        const Color(0xFF0284C7),
+        'Питьевая вода',
       ),
       _ => (Icons.wc_rounded, const Color(0xFF15803D), 'Туалет'),
     };
@@ -5377,88 +5560,173 @@ class _AddToiletSheet extends StatelessWidget {
 
               const SizedBox(height: 10),
 
-              Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(17),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _ChoiceButton(
-                        selected: placeKind == PlaceKind.communityToilet,
-                        icon: Icons.wc_rounded,
-                        text: 'Туалет',
-                        color: const Color(0xFF15803D),
-                        onTap: () =>
-                            onPlaceKindChanged(PlaceKind.communityToilet),
-                      ),
-                    ),
-                    Expanded(
-                      child: _ChoiceButton(
-                        selected: placeKind == PlaceKind.phoneCharging,
-                        icon: Icons.battery_charging_full_rounded,
-                        text: 'Телефон',
-                        color: const Color(0xFF2563EB),
-                        onTap: () =>
-                            onPlaceKindChanged(PlaceKind.phoneCharging),
-                      ),
-                    ),
-                    Expanded(
-                      child: _ChoiceButton(
-                        selected: placeKind == PlaceKind.evCharging,
-                        icon: Icons.ev_station_rounded,
-                        text: 'Электро',
-                        color: const Color(0xFF0891B2),
-                        onTap: () => onPlaceKindChanged(PlaceKind.evCharging),
-                      ),
-                    ),
-                  ],
-                ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _FilterCategoryChip(
+                    label: 'Туалет',
+                    icon: Icons.wc_rounded,
+                    color: const Color(0xFF15803D),
+                    selected: placeKind == PlaceKind.communityToilet,
+                    onSelected: () =>
+                        onPlaceKindChanged(PlaceKind.communityToilet),
+                  ),
+                  _FilterCategoryChip(
+                    label: 'Кафе',
+                    icon: Icons.restaurant_rounded,
+                    color: const Color(0xFFEA580C),
+                    selected: placeKind == PlaceKind.cafe,
+                    onSelected: () => onPlaceKindChanged(PlaceKind.cafe),
+                  ),
+                  _FilterCategoryChip(
+                    label: 'Организация',
+                    icon: Icons.apartment_rounded,
+                    color: const Color(0xFF0F766E),
+                    selected: placeKind == PlaceKind.organization,
+                    onSelected: () =>
+                        onPlaceKindChanged(PlaceKind.organization),
+                  ),
+                  _FilterCategoryChip(
+                    label: 'АЗС',
+                    icon: Icons.local_gas_station_rounded,
+                    color: const Color(0xFF7C3AED),
+                    selected: placeKind == PlaceKind.fuel,
+                    onSelected: () => onPlaceKindChanged(PlaceKind.fuel),
+                  ),
+                  _FilterCategoryChip(
+                    label: 'Вода',
+                    icon: Icons.water_drop_rounded,
+                    color: const Color(0xFF0284C7),
+                    selected: placeKind == PlaceKind.water,
+                    onSelected: () => onPlaceKindChanged(PlaceKind.water),
+                  ),
+                  _FilterCategoryChip(
+                    label: 'Телефон',
+                    icon: Icons.battery_charging_full_rounded,
+                    color: const Color(0xFF2563EB),
+                    selected: placeKind == PlaceKind.phoneCharging,
+                    onSelected: () =>
+                        onPlaceKindChanged(PlaceKind.phoneCharging),
+                  ),
+                  _FilterCategoryChip(
+                    label: 'Электро',
+                    icon: Icons.ev_station_rounded,
+                    color: const Color(0xFF0891B2),
+                    selected: placeKind == PlaceKind.evCharging,
+                    onSelected: () => onPlaceKindChanged(PlaceKind.evCharging),
+                  ),
+                ],
               ),
+
+              if (!isToilet) ...[
+                const SizedBox(height: 18),
+                TextFormField(
+                  initialValue: placeName,
+                  onChanged: onPlaceNameChanged,
+                  decoration: InputDecoration(
+                    labelText: placeKind == PlaceKind.water
+                        ? 'Название или тип точки'
+                        : 'Название места',
+                    hintText: placeKind == PlaceKind.cafe
+                        ? 'Например: Кофейня у парка'
+                        : placeKind == PlaceKind.organization
+                        ? 'Например: Библиотека'
+                        : 'Как называется это место?',
+                    prefixIcon: Icon(placeIcon),
+                  ),
+                ),
+              ],
+
+              if (isToilet) ...[
+                const SizedBox(height: 18),
+                const _SectionTitle(
+                  icon: Icons.park_outlined,
+                  title: 'Тип туалета',
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(17),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _ChoiceButton(
+                          selected: !outdoorToilet,
+                          icon: Icons.wc_rounded,
+                          text: 'Обычный',
+                          color: const Color(0xFF15803D),
+                          onTap: () => onOutdoorToiletChanged(false),
+                        ),
+                      ),
+                      Expanded(
+                        child: _ChoiceButton(
+                          selected: outdoorToilet,
+                          icon: Icons.park_rounded,
+                          text: 'Уличный / парковый',
+                          color: const Color(0xFFD97706),
+                          onTap: () => onOutdoorToiletChanged(true),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (outdoorToilet) ...[
+                  const SizedBox(height: 9),
+                  const Text(
+                    'Шаблон поставит 3 звезды, плохое состояние, отсутствие бумаги и мыла. Всё можно изменить ниже.',
+                    style: TextStyle(
+                      color: AppPalette.muted,
+                      fontSize: 12,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ],
 
               const SizedBox(height: 24),
 
               // Стоимость
-              const _SectionTitle(
-                icon: Icons.payments_outlined,
-                title: 'Стоимость',
-              ),
-
-              const SizedBox(height: 10),
-
-              Container(
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(16),
+              if (isToilet) ...[
+                const _SectionTitle(
+                  icon: Icons.payments_outlined,
+                  title: 'Стоимость',
                 ),
-                padding: const EdgeInsets.all(5),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _ChoiceButton(
-                        selected: isFree,
-                        icon: Icons.check_circle_outline_rounded,
-                        text: 'Бесплатный',
-                        color: const Color(0xFF16A34A),
-                        onTap: () => onFreeChanged(true),
+                const SizedBox(height: 10),
+                Container(
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  padding: const EdgeInsets.all(5),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _ChoiceButton(
+                          selected: isFree,
+                          icon: Icons.check_circle_outline_rounded,
+                          text: 'Бесплатный',
+                          color: const Color(0xFF16A34A),
+                          onTap: () => onFreeChanged(true),
+                        ),
                       ),
-                    ),
-                    Expanded(
-                      child: _ChoiceButton(
-                        selected: !isFree,
-                        icon: Icons.payments_outlined,
-                        text: 'Платный',
-                        color: Colors.orange.shade700,
-                        onTap: () => onFreeChanged(false),
+                      Expanded(
+                        child: _ChoiceButton(
+                          selected: !isFree,
+                          icon: Icons.payments_outlined,
+                          text: 'Платный',
+                          color: Colors.orange.shade700,
+                          onTap: () => onFreeChanged(false),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-
-              const SizedBox(height: 22),
+                const SizedBox(height: 22),
+              ],
 
               // Чистота
               _SectionTitle(
@@ -5528,6 +5796,7 @@ class _AddToiletSheet extends StatelessWidget {
               const SizedBox(height: 10),
 
               DropdownButtonFormField<String>(
+                key: ValueKey('condition-$condition'),
                 initialValue: condition,
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.cleaning_services_outlined),
@@ -5549,6 +5818,77 @@ class _AddToiletSheet extends StatelessWidget {
                   }
                 },
               ),
+
+              const SizedBox(height: 22),
+
+              const _SectionTitle(
+                icon: Icons.door_front_door_outlined,
+                title: 'Доступ',
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                key: ValueKey('access-$accessType'),
+                initialValue: accessType,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.meeting_room_outlined),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'public', child: Text('Для всех')),
+                  DropdownMenuItem(
+                    value: 'customers',
+                    child: Text('Только клиентам'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'permissive',
+                    child: Text('Обычно пускают'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'destination',
+                    child: Text('Только посетителям'),
+                  ),
+                  DropdownMenuItem(value: 'unknown', child: Text('Не знаю')),
+                ],
+                onChanged: (value) {
+                  if (value != null) onAccessTypeChanged(value);
+                },
+              ),
+
+              if (isToilet) ...[
+                const SizedBox(height: 22),
+                const _SectionTitle(
+                  icon: Icons.checklist_rounded,
+                  title: 'Что есть внутри',
+                ),
+                const SizedBox(height: 10),
+                _TriStateField(
+                  label: 'Туалетная бумага',
+                  icon: Icons.receipt_long_outlined,
+                  value: hasPaper,
+                  onChanged: onPaperChanged,
+                ),
+                const SizedBox(height: 10),
+                _TriStateField(
+                  label: 'Мыло',
+                  icon: Icons.soap_outlined,
+                  value: hasSoap,
+                  onChanged: onSoapChanged,
+                ),
+                const SizedBox(height: 10),
+                _TriStateField(
+                  label: 'Доступ для коляски',
+                  icon: Icons.accessible_outlined,
+                  value: wheelchairAccessible,
+                  onChanged: onWheelchairChanged,
+                ),
+              ] else if (placeKind != PlaceKind.phoneCharging) ...[
+                const SizedBox(height: 14),
+                _TriStateField(
+                  label: 'Можно зарядить телефон',
+                  icon: Icons.bolt_outlined,
+                  value: phoneCharging,
+                  onChanged: onPhoneChargingChanged,
+                ),
+              ],
 
               const SizedBox(height: 22),
 

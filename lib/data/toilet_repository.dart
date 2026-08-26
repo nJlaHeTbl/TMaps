@@ -46,11 +46,16 @@ class ToiletRepository {
         .map(Map<String, dynamic>.from)
         .where(ContentGuard.isSafeCommunityToilet)
         .map((toilet) {
+          final kind = PlaceInfo.kindOf(toilet);
           return {
             ...toilet,
             'place_kind': toilet['place_kind'] ?? 'community_toilet',
             'has_toilet': toilet['has_toilet'] ?? true,
             'access_type': toilet['access_type'] ?? 'public',
+            'fee_known':
+                toilet['fee_known'] ??
+                (kind == PlaceKind.communityToilet ||
+                    kind == PlaceKind.publicToilet),
             'source': 'community',
           };
         })
@@ -122,9 +127,15 @@ class ToiletRepository {
     required double longitude,
     required String username,
     required PlaceKind placeKind,
+    required String? name,
     required bool isFree,
     required int cleanliness,
     required String condition,
+    required bool? hasPaper,
+    required bool? hasSoap,
+    required bool? wheelchairAccessible,
+    required bool? phoneCharging,
+    required String accessType,
     String? comment,
   }) async {
     final usernameIssue = ContentGuard.validateUsername(username);
@@ -137,9 +148,15 @@ class ToiletRepository {
       longitude: longitude,
       username: username,
       placeKind: placeKind,
+      name: name,
       isFree: isFree,
       cleanliness: cleanliness,
       condition: condition,
+      hasPaper: hasPaper,
+      hasSoap: hasSoap,
+      wheelchairAccessible: wheelchairAccessible,
+      phoneCharging: phoneCharging,
+      accessType: accessType,
       comment: comment,
     );
   }

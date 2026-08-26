@@ -8,14 +8,30 @@ const validSubmission = {
   lng: 78.3739,
   username: 'Асылбек',
   placeKind: 'community_toilet',
+  name: null,
   isFree: true,
   cleanliness: 4,
   condition: 'Хорошее',
+  hasPaper: true,
+  hasSoap: true,
+  wheelchairAccessible: null,
+  phoneCharging: null,
+  accessType: 'public',
   comment: 'Есть бумага и мыло',
 };
 
 test('accepts a valid Kazakhstan place submission', () => {
   assert.deepEqual(testing.validateSubmission(validSubmission), validSubmission);
+});
+
+test('accepts a named cafe submission', () => {
+  const cafe = {
+    ...validSubmission,
+    placeKind: 'cafe',
+    name: 'Кофейня у парка',
+    accessType: 'customers',
+  };
+  assert.deepEqual(testing.validateSubmission(cafe), cafe);
 });
 
 test('rejects a submission outside Kazakhstan', () => {

@@ -20,7 +20,7 @@ class AddLocationChoiceSheet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Где находится место?',
+              'Добавить место',
               style: TextStyle(
                 fontSize: 25,
                 fontWeight: FontWeight.w900,
@@ -29,14 +29,14 @@ class AddLocationChoiceSheet extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             const Text(
-              'Можно добавить точку рядом с собой или выбрать её в другом городе.',
+              'Туалет, кафе, организация, вода или зарядка — выбери точку рядом с собой либо на карте.',
               style: TextStyle(color: AppPalette.muted, height: 1.35),
             ),
             const SizedBox(height: 18),
             _LocationChoice(
-              icon: Icons.my_location_rounded,
+              icon: Icons.gps_fixed_rounded,
               title: 'Я нахожусь здесь',
-              subtitle: 'Использовать текущее местоположение',
+              subtitle: 'GPS возьмёт координаты автоматически',
               gradient: AppPalette.brandGradient,
               onTap: () => Navigator.pop(context, AddLocationMode.current),
             ),
@@ -51,10 +51,12 @@ class AddLocationChoiceSheet extends StatelessWidget {
             const SizedBox(height: 12),
             _LocationChoice(
               icon: Icons.fact_check_rounded,
-              title: 'Мои заявки',
+              title: submissionCount == 0
+                  ? 'Мои заявки'
+                  : 'Мои заявки · $submissionCount',
               subtitle: submissionCount == 0
-                  ? 'Здесь появятся отправленные на проверку точки'
-                  : '$submissionCount на проверке · видно только на этом устройстве',
+                  ? 'Здесь появятся отправленные на проверку места'
+                  : 'Открой статус и покажи точку на карте',
               gradient: const LinearGradient(
                 colors: [Color(0xFF2563EB), Color(0xFF06B6D4)],
               ),

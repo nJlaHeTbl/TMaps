@@ -13,6 +13,12 @@ class TrackedSubmission {
     required this.cleanliness,
     required this.condition,
     required this.createdAt,
+    this.name,
+    this.hasPaper,
+    this.hasSoap,
+    this.wheelchairAccessible,
+    this.phoneCharging,
+    this.accessType = 'public',
     this.comment,
     this.status = 'pending',
   });
@@ -22,9 +28,15 @@ class TrackedSubmission {
   final double longitude;
   final String username;
   final String placeKind;
+  final String? name;
   final bool isFree;
   final int cleanliness;
   final String condition;
+  final bool? hasPaper;
+  final bool? hasSoap;
+  final bool? wheelchairAccessible;
+  final bool? phoneCharging;
+  final String accessType;
   final String? comment;
   final DateTime createdAt;
   final String status;
@@ -35,9 +47,15 @@ class TrackedSubmission {
     'lng': longitude,
     'username': username,
     'place_kind': placeKind,
+    'name': name,
     'is_free': isFree,
     'cleanliness': cleanliness,
     'condition': condition,
+    'has_paper': hasPaper,
+    'has_soap': hasSoap,
+    'wheelchair_accessible': wheelchairAccessible,
+    'phone_charging': phoneCharging,
+    'access_type': accessType,
     'comment': comment,
     'created_at': createdAt.toUtc().toIso8601String(),
     'status': status,
@@ -50,9 +68,15 @@ class TrackedSubmission {
       longitude: (json['lng'] as num).toDouble(),
       username: json['username']?.toString() ?? 'Пользователь TMaps',
       placeKind: json['place_kind']?.toString() ?? 'community_toilet',
+      name: json['name']?.toString(),
       isFree: json['is_free'] == true,
       cleanliness: (json['cleanliness'] as num?)?.toInt() ?? 0,
       condition: json['condition']?.toString() ?? 'Не указано',
+      hasPaper: json['has_paper'] as bool?,
+      hasSoap: json['has_soap'] as bool?,
+      wheelchairAccessible: json['wheelchair_accessible'] as bool?,
+      phoneCharging: json['phone_charging'] as bool?,
+      accessType: json['access_type']?.toString() ?? 'public',
       comment: json['comment']?.toString(),
       createdAt:
           DateTime.tryParse(json['created_at']?.toString() ?? '') ??

@@ -6,6 +6,9 @@ const DEFAULT_ORIGINS = [
 
 const PLACE_KINDS = new Set([
   'community_toilet',
+  'cafe',
+  'fuel',
+  'organization',
   'phone_charging',
   'ev_charging',
   'water',
@@ -139,17 +142,25 @@ async function submitPlace(request, env) {
 
   const result = await env.DB.prepare(
     `INSERT INTO place_submissions
-      (lat, lng, username, place_kind, is_free, cleanliness, condition, comment)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (lat, lng, username, place_kind, name, is_free, cleanliness, condition,
+       has_paper, has_soap, wheelchair_accessible, phone_charging,
+       access_type, comment)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      RETURNING id`,
   ).bind(
     input.lat,
     input.lng,
     input.username,
     input.placeKind,
+    input.name,
     boolInt(input.isFree),
     input.cleanliness,
     input.condition,
+    nullableBoolInt(input.hasPaper),
+    nullableBoolInt(input.hasSoap),
+    nullableBoolInt(input.wheelchairAccessible),
+    nullableBoolInt(input.phoneCharging),
+    input.accessType,
     input.comment,
   ).first();
 
@@ -233,12 +244,14 @@ async function moderateSubmission(request, env, id) {
   const statements = [
     env.DB.prepare(
       `INSERT INTO toilets
-        (lat, lng, username, is_free, cleanliness, condition, comment,
-         place_kind, has_toilet, access_type, submission_id)
-       SELECT lat, lng, username, is_free, cleanliness, condition, comment,
+        (lat, lng, username, name, is_free, cleanliness, condition, comment,
+         place_kind, has_toilet, has_paper, has_soap, wheelchair_accessible,
+         phone_charging, access_type, submission_id)
+       SELECT lat, lng, username, name, is_free, cleanliness, condition, comment,
          place_kind,
          CASE WHEN place_kind = 'community_toilet' THEN 1 ELSE 0 END,
-         'public', id
+         has_paper, has_soap, wheelchair_accessible, phone_charging,
+         access_type, id
        FROM place_submissions WHERE id = ? AND status = 'pending'`,
     ).bind(id),
     env.DB.prepare(
@@ -259,12 +272,40 @@ function validateSubmission(body) {
   const username = safeUserText(body.username, 'Имя', 2, 30);
   const placeKind = requiredText(body.placeKind, 'Категория', 2, 40);
   if (!PLACE_KINDS.has(placeKind)) throw new HttpError(400, 'Неизвестная категория');
+  const name = optionalSafeText(body.name, 'Название', 80);
+  if (['cafe', 'fuel', 'organization'].includes(placeKind) && !name) {
+    throw new HttpError(400, 'Укажи название места');
+  }
   if (typeof body.isFree !== 'boolean') throw new HttpError(400, 'Укажи стоимость');
   const cleanliness = boundedInteger(body.cleanliness, 'Чистота', 1, 5);
   const condition = requiredText(body.condition, 'Состояние', 2, 20);
   if (!CONDITIONS.has(condition)) throw new HttpError(400, 'Неизвестное состояние');
+  const accessType = requiredText(body.accessType, 'Доступ', 2, 20);
+  if (!ACCESS_TYPES.has(accessType)) throw new HttpError(400, 'Неизвестный тип доступа');
+  for (const field of [
+    'hasPaper', 'hasSoap', 'wheelchairAccessible', 'phoneCharging',
+  ]) {
+    if (body[field] !== null && body[field] !== undefined && typeof body[field] !== 'boolean') {
+      throw new HttpError(400, 'Некорректные параметры места');
+    }
+  }
   const comment = optionalSafeText(body.comment, 'Комментарий', 300);
-  return { lat, lng, username, placeKind, isFree: body.isFree, cleanliness, condition, comment };
+  return {
+    lat,
+    lng,
+    username,
+    placeKind,
+    name,
+    isFree: body.isFree,
+    cleanliness,
+    condition,
+    hasPaper: body.hasPaper,
+    hasSoap: body.hasSoap,
+    wheelchairAccessible: body.wheelchairAccessible,
+    phoneCharging: body.phoneCharging,
+    accessType,
+    comment,
+  };
 }
 
 function validateReport(body) {
