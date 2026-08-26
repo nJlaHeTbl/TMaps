@@ -148,11 +148,17 @@ class PlacePickerOverlay extends StatelessWidget {
     required this.position,
     required this.onCancel,
     required this.onConfirm,
+    this.title = 'Новая точка',
+    this.confirmLabel = 'Выбрать эту точку',
+    this.pinIcon = Icons.add_location_alt_rounded,
   });
 
   final LatLng position;
   final VoidCallback onCancel;
   final VoidCallback onConfirm;
+  final String title;
+  final String confirmLabel;
+  final IconData pinIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -197,7 +203,7 @@ class PlacePickerOverlay extends StatelessWidget {
                 ),
               ),
             ),
-            const Center(child: IgnorePointer(child: _PickerPin())),
+            Center(child: IgnorePointer(child: _PickerPin(icon: pinIcon))),
             Positioned(
               left: 14,
               right: 14,
@@ -233,8 +239,8 @@ class PlacePickerOverlay extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'Новая точка',
+                                Text(
+                                  title,
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w900,
@@ -268,7 +274,7 @@ class PlacePickerOverlay extends StatelessWidget {
                             child: FilledButton.icon(
                               onPressed: onConfirm,
                               icon: const Icon(Icons.check_rounded),
-                              label: const Text('Выбрать эту точку'),
+                              label: Text(confirmLabel),
                             ),
                           ),
                         ],
@@ -286,7 +292,9 @@ class PlacePickerOverlay extends StatelessWidget {
 }
 
 class _PickerPin extends StatelessWidget {
-  const _PickerPin();
+  const _PickerPin({required this.icon});
+
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -307,8 +315,8 @@ class _PickerPin extends StatelessWidget {
             ),
           ],
         ),
-        child: const Icon(
-          Icons.add_location_alt_rounded,
+        child: Icon(
+          icon,
           color: Colors.white,
           size: 29,
         ),

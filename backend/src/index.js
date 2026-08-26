@@ -98,6 +98,12 @@ async function route(request, env) {
     ).all();
     return json(request, env, { votes: result.results });
   }
+  if (method === 'GET' && url.pathname === '/api/location-overrides') {
+    const result = await env.DB.prepare(
+      'SELECT * FROM place_location_overrides ORDER BY updated_at DESC LIMIT 5000',
+    ).all();
+    return json(request, env, { overrides: normalizeRows(result.results) });
+  }
   if (method === 'POST' && url.pathname === '/api/submissions') {
     return submitPlace(request, env);
   }
@@ -106,6 +112,9 @@ async function route(request, env) {
   }
   if (method === 'POST' && url.pathname === '/api/votes') {
     return castVote(request, env);
+  }
+  if (method === 'POST' && url.pathname === '/api/location-corrections') {
+    return submitLocationCorrection(request, env);
   }
   if (method === 'GET' && url.pathname === '/api/admin/submissions') {
     requireAdmin(request, env);
@@ -118,6 +127,18 @@ async function route(request, env) {
     ).bind(status).all();
     return json(request, env, { submissions: normalizeRows(result.results) });
   }
+  if (method === 'GET' && url.pathname === '/api/admin/location-corrections') {
+    requireAdmin(request, env);
+    const status = url.searchParams.get('status') || 'pending';
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      throw new HttpError(400, 'Неизвестный статус');
+    }
+    const result = await env.DB.prepare(
+      `SELECT * FROM place_location_corrections
+       WHERE status = ? ORDER BY created_at DESC LIMIT 500`,
+    ).bind(status).all();
+    return json(request, env, { corrections: normalizeRows(result.results) });
+  }
 
   const moderationMatch = url.pathname.match(
     /^\/api\/admin\/submissions\/(\d+)$/,
@@ -125,6 +146,18 @@ async function route(request, env) {
   if (method === 'PATCH' && moderationMatch) {
     requireAdmin(request, env);
     return moderateSubmission(request, env, Number(moderationMatch[1]));
+  }
+
+  const locationModerationMatch = url.pathname.match(
+    /^\/api\/admin\/location-corrections\/(\d+)$/,
+  );
+  if (method === 'PATCH' && locationModerationMatch) {
+    requireAdmin(request, env);
+    return moderateLocationCorrection(
+      request,
+      env,
+      Number(locationModerationMatch[1]),
+    );
   }
 
   if (method === 'GET' && !url.pathname.startsWith('/api/') && env.ASSETS) {
@@ -220,6 +253,31 @@ async function castVote(request, env) {
   return json(request, env, { ok: true });
 }
 
+async function submitLocationCorrection(request, env) {
+  const body = await readJson(request);
+  const input = validateLocationCorrection(body);
+  await verifyTurnstile(body.turnstileToken, request, env);
+  await enforceRateLimit(request, env, 'location-correction', 10, 3600);
+
+  const result = await env.DB.prepare(
+    `INSERT INTO place_location_corrections
+      (place_key, current_lat, current_lng, proposed_lat, proposed_lng,
+       username, comment)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     RETURNING id`,
+  ).bind(
+    input.placeKey,
+    input.currentLat,
+    input.currentLng,
+    input.proposedLat,
+    input.proposedLng,
+    input.username,
+    input.comment,
+  ).first();
+
+  return json(request, env, { id: result.id, status: 'pending' }, 201);
+}
+
 async function moderateSubmission(request, env, id) {
   const body = await readJson(request);
   const status = body.status;
@@ -263,6 +321,55 @@ async function moderateSubmission(request, env, id) {
     ).bind(id, id),
   ];
   await env.DB.batch(statements);
+  return json(request, env, { ok: true, status });
+}
+
+async function moderateLocationCorrection(request, env, id) {
+  const body = await readJson(request);
+  const status = body.status;
+  if (!['approved', 'rejected'].includes(status)) {
+    throw new HttpError(400, 'Выбери approved или rejected');
+  }
+
+  const correction = await env.DB.prepare(
+    `SELECT * FROM place_location_corrections
+     WHERE id = ? AND status = 'pending'`,
+  ).bind(id).first();
+  if (!correction) {
+    throw new HttpError(404, 'Исправление уже обработано или не найдено');
+  }
+
+  if (status === 'rejected') {
+    await env.DB.prepare(
+      `UPDATE place_location_corrections
+       SET status = 'rejected', reviewed_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'pending'`,
+    ).bind(id).run();
+    return json(request, env, { ok: true, status });
+  }
+
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO place_location_overrides
+        (place_key, lat, lng, location_correction_id, updated_at)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT (place_key) DO UPDATE SET
+         lat = excluded.lat,
+         lng = excluded.lng,
+         location_correction_id = excluded.location_correction_id,
+         updated_at = excluded.updated_at`,
+    ).bind(
+      correction.place_key,
+      correction.proposed_lat,
+      correction.proposed_lng,
+      correction.id,
+    ),
+    env.DB.prepare(
+      `UPDATE place_location_corrections
+       SET status = 'approved', reviewed_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'pending'`,
+    ).bind(id),
+  ]);
   return json(request, env, { ok: true, status });
 }
 
@@ -337,6 +444,33 @@ function validateReport(body) {
     condition,
     accessType,
     comment: optionalSafeText(body.comment, 'Комментарий', 300),
+  };
+}
+
+function validateLocationCorrection(body) {
+  const placeKey = requiredText(body.placeKey, 'Точка', 3, 120);
+  const currentLat = boundedNumber(body.currentLat, 'Текущая широта', 40.45, 55.55);
+  const currentLng = boundedNumber(body.currentLng, 'Текущая долгота', 46.45, 87.4);
+  const proposedLat = boundedNumber(body.proposedLat, 'Новая широта', 40.45, 55.55);
+  const proposedLng = boundedNumber(body.proposedLng, 'Новая долгота', 46.45, 87.4);
+  const username = safeUserText(body.username, 'Имя', 2, 30);
+  const comment = optionalSafeText(body.comment, 'Комментарий', 300);
+
+  if (
+    Math.abs(currentLat - proposedLat) < 0.000001 &&
+    Math.abs(currentLng - proposedLng) < 0.000001
+  ) {
+    throw new HttpError(400, 'Передвинь метку в новое место');
+  }
+
+  return {
+    placeKey,
+    currentLat,
+    currentLng,
+    proposedLat,
+    proposedLng,
+    username,
+    comment,
   };
 }
 
@@ -516,6 +650,7 @@ export const testing = {
   HttpError,
   validateSubmission,
   validateReport,
+  validateLocationCorrection,
   normalizeRow,
   isAllowedOrigin,
 };

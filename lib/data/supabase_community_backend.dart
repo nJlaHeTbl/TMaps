@@ -32,6 +32,12 @@ final class SupabaseCommunityBackend implements CommunityBackend {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> fetchLocationOverrides() async {
+    final response = await _client.from('place_location_overrides').select();
+    return response.map(Map<String, dynamic>.from).toList(growable: false);
+  }
+
+  @override
   Future<int> submitPlace({
     required double latitude,
     required double longitude,
@@ -108,6 +114,31 @@ final class SupabaseCommunityBackend implements CommunityBackend {
         .select()
         .single();
     return Map<String, dynamic>.from(response);
+  }
+
+  @override
+  Future<int> submitLocationCorrection({
+    required String placeKey,
+    required double currentLatitude,
+    required double currentLongitude,
+    required double proposedLatitude,
+    required double proposedLongitude,
+    required String username,
+    String? comment,
+  }) async {
+    final response = await _client.rpc(
+      'submit_place_location_correction',
+      params: {
+        'p_place_key': placeKey,
+        'p_current_lat': currentLatitude,
+        'p_current_lng': currentLongitude,
+        'p_proposed_lat': proposedLatitude,
+        'p_proposed_lng': proposedLongitude,
+        'p_username': username,
+        'p_comment': comment,
+      },
+    );
+    return (response as num).toInt();
   }
 
   @override

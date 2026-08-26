@@ -70,3 +70,33 @@ test('allows only configured browser origins to write', () => {
   assert.equal(testing.isAllowedOrigin(allowed, env), true);
   assert.equal(testing.isAllowedOrigin(rejected, env), false);
 });
+
+test('accepts a moderated location correction inside Kazakhstan', () => {
+  const correction = {
+    placeKey: 'curated:beach-toilet',
+    currentLat: 45.019598,
+    currentLng: 78.399912,
+    proposedLat: 45.0197,
+    proposedLng: 78.4001,
+    username: 'Мирас',
+    comment: null,
+  };
+
+  assert.deepEqual(testing.validateLocationCorrection(correction), correction);
+});
+
+test('rejects a location correction that does not move the marker', () => {
+  const correction = {
+    placeKey: 'osm:123',
+    currentLat: 45.0156,
+    currentLng: 78.3739,
+    proposedLat: 45.0156,
+    proposedLng: 78.3739,
+    username: 'Мирас',
+  };
+
+  assert.throws(
+    () => testing.validateLocationCorrection(correction),
+    /Передвинь метку/,
+  );
+});

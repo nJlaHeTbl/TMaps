@@ -27,16 +27,21 @@ class ToiletRepository {
       safe(_fetchCommunityToilets()),
       safe(_fetchReports()),
       safe(_fetchVoteTotals()),
+      safe(_backend.fetchLocationOverrides()),
     ]);
     final openStreetMapToilets = results[0];
     final communityToilets = results[1];
     final reports = results[2];
     final voteTotals = results[3];
+    final locationOverrides = results[4];
 
-    return _attachCommunityData(
-      [...communityToilets, ...openStreetMapToilets],
-      reports,
-      voteTotals,
+    return _applyLocationOverrides(
+      _attachCommunityData(
+        [...communityToilets, ...openStreetMapToilets],
+        reports,
+        voteTotals,
+      ),
+      locationOverrides,
     );
   }
 
@@ -86,6 +91,31 @@ class ToiletRepository {
 
   Future<List<Map<String, dynamic>>> _fetchVoteTotals() =>
       _backend.fetchVoteTotals();
+
+  List<Map<String, dynamic>> _applyLocationOverrides(
+    List<Map<String, dynamic>> places,
+    List<Map<String, dynamic>> overrides,
+  ) {
+    final overridesByPlace = {
+      for (final override in overrides)
+        if (override['place_key'] != null)
+          override['place_key'].toString(): override,
+    };
+
+    return places.map((place) {
+      final override = overridesByPlace[PlaceInfo.keyOf(place)];
+      if (override == null) return place;
+      return {
+        ...place,
+        'original_lat': place['lat'],
+        'original_lng': place['lng'],
+        'lat': override['lat'],
+        'lng': override['lng'],
+        'location_corrected': true,
+        'location_corrected_at': override['updated_at'],
+      };
+    }).toList(growable: false);
+  }
 
   List<Map<String, dynamic>> _attachCommunityData(
     List<Map<String, dynamic>> places,
@@ -208,6 +238,36 @@ class ToiletRepository {
       placeKey: PlaceInfo.keyOf(place),
       voterKey: voterKey,
       isCurrent: isCurrent,
+    );
+  }
+
+  Future<int> submitLocationCorrection({
+    required Map<String, dynamic> place,
+    required double proposedLatitude,
+    required double proposedLongitude,
+    required String username,
+    String? comment,
+  }) async {
+    final usernameIssue = ContentGuard.validateUsername(username);
+    final commentIssue = ContentGuard.validateComment(comment);
+    if (usernameIssue != null) throw ArgumentError(usernameIssue);
+    if (commentIssue != null) throw ArgumentError(commentIssue);
+
+    final currentLatitude = (place['lat'] as num).toDouble();
+    final currentLongitude = (place['lng'] as num).toDouble();
+    if ((currentLatitude - proposedLatitude).abs() < 0.000001 &&
+        (currentLongitude - proposedLongitude).abs() < 0.000001) {
+      throw ArgumentError('Передвинь метку в новое место');
+    }
+
+    return _backend.submitLocationCorrection(
+      placeKey: PlaceInfo.keyOf(place),
+      currentLatitude: currentLatitude,
+      currentLongitude: currentLongitude,
+      proposedLatitude: proposedLatitude,
+      proposedLongitude: proposedLongitude,
+      username: username,
+      comment: comment,
     );
   }
 }

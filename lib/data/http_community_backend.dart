@@ -26,6 +26,10 @@ final class HttpCommunityBackend implements CommunityBackend {
       _getList('/api/votes', 'votes');
 
   @override
+  Future<List<Map<String, dynamic>>> fetchLocationOverrides() =>
+      _getList('/api/location-overrides', 'overrides');
+
+  @override
   Future<int> submitPlace({
     required double latitude,
     required double longitude,
@@ -95,6 +99,28 @@ final class HttpCommunityBackend implements CommunityBackend {
       'comment': comment,
     });
     return Map<String, dynamic>.from(payload['report'] as Map);
+  }
+
+  @override
+  Future<int> submitLocationCorrection({
+    required String placeKey,
+    required double currentLatitude,
+    required double currentLongitude,
+    required double proposedLatitude,
+    required double proposedLongitude,
+    required String username,
+    String? comment,
+  }) async {
+    final payload = await _send('/api/location-corrections', {
+      'placeKey': placeKey,
+      'currentLat': currentLatitude,
+      'currentLng': currentLongitude,
+      'proposedLat': proposedLatitude,
+      'proposedLng': proposedLongitude,
+      'username': username,
+      'comment': comment,
+    });
+    return (payload['id'] as num).toInt();
   }
 
   @override

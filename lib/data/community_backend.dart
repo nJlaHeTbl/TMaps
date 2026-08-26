@@ -7,6 +7,8 @@ abstract interface class CommunityBackend {
 
   Future<List<Map<String, dynamic>>> fetchVoteTotals();
 
+  Future<List<Map<String, dynamic>>> fetchLocationOverrides();
+
   Future<int> submitPlace({
     required double latitude,
     required double longitude,
@@ -38,6 +40,16 @@ abstract interface class CommunityBackend {
     required bool? wheelchairAccessible,
     required bool? phoneCharging,
     required String accessType,
+    String? comment,
+  });
+
+  Future<int> submitLocationCorrection({
+    required String placeKey,
+    required double currentLatitude,
+    required double currentLongitude,
+    required double proposedLatitude,
+    required double proposedLongitude,
+    required String username,
     String? comment,
   });
 

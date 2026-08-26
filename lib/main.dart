@@ -145,6 +145,7 @@ class _HomePageState extends State<HomePage> {
   double _locationHeading = 0;
   bool _followUser = false;
   bool _isPickingLocation = false;
+  Map<String, dynamic>? _locationCorrectionPlace;
   MapBaseStyle _mapBaseStyle = MapBaseStyle.streets;
 
   final List<Map<String, dynamic>> toilets = [];
@@ -157,6 +158,7 @@ class _HomePageState extends State<HomePage> {
   bool isBuildingRoute = false;
   bool isFindingNearest = false;
   bool isSubmittingReport = false;
+  bool isSubmittingLocationCorrection = false;
   bool isSubmittingVote = false;
   bool showFreeOnly = false;
   bool showWheelchairOnly = false;
@@ -1272,6 +1274,7 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _followUser = false;
       _isPickingLocation = true;
+      _locationCorrectionPlace = null;
       _pickedPosition = target;
     });
     if (position != null) {
@@ -1280,18 +1283,111 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _cancelLocationPicker() {
-    setState(() => _isPickingLocation = false);
+    setState(() {
+      _isPickingLocation = false;
+      _locationCorrectionPlace = null;
+    });
   }
 
   Future<void> _confirmPickedLocation() async {
     if (!await _ensureValidUsername()) return;
 
     final position = _pickedPosition;
+    final correctionPlace = _locationCorrectionPlace;
+    if (correctionPlace != null) {
+      await _submitLocationCorrection(correctionPlace, position);
+      return;
+    }
     setState(() {
       _isPickingLocation = false;
       isAddingToilet = true;
     });
     await _showAddPlaceForm(position);
+  }
+
+  Future<void> _beginLocationCorrection(
+    Map<String, dynamic> place,
+  ) async {
+    if (isSubmittingLocationCorrection || !await _ensureValidUsername()) return;
+    if (!mounted) return;
+
+    final target = LatLng(
+      (place['lat'] as num).toDouble(),
+      (place['lng'] as num).toDouble(),
+    );
+    final camera = _mapController.camera;
+    setState(() {
+      _followUser = false;
+      _locationCorrectionPlace = Map<String, dynamic>.from(place);
+      _pickedPosition = target;
+      _isPickingLocation = true;
+    });
+    _mapController.move(target, max(camera.zoom, 17.2));
+  }
+
+  Future<void> _submitLocationCorrection(
+    Map<String, dynamic> place,
+    LatLng position,
+  ) async {
+    final placeKey = PlaceInfo.keyOf(place);
+    final prefs = await SharedPreferences.getInstance();
+    final lastCorrectionAt = prefs.getInt('last_location_correction:$placeKey');
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    if (lastCorrectionAt != null && now - lastCorrectionAt < 300000) {
+      if (!mounted) return;
+      setState(() {
+        _isPickingLocation = false;
+        _locationCorrectionPlace = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'Подожди 5 минут перед новой заявкой на перенос этой точки',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isPickingLocation = false;
+      _locationCorrectionPlace = null;
+      isSubmittingLocationCorrection = true;
+    });
+
+    try {
+      final correctionId = await _toiletRepository.submitLocationCorrection(
+        place: place,
+        proposedLatitude: position.latitude,
+        proposedLongitude: position.longitude,
+        username: username!,
+      );
+      await prefs.setInt('last_location_correction:$placeKey', now);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'Заявка #$correctionId на перенос отправлена. '
+            'Метка изменится после проверки.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red.shade700,
+          content: Text('Не удалось отправить перенос: $error'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => isSubmittingLocationCorrection = false);
+    }
   }
 
   Future<void> _showAddPlaceForm(LatLng position) async {
@@ -1596,6 +1692,7 @@ class _HomePageState extends State<HomePage> {
           dislikes: (toilet['dislikes'] as num?)?.toInt() ?? 0,
           isBuildingRoute: isBuildingRoute,
           isSubmittingReport: isSubmittingReport,
+          isSubmittingLocationCorrection: isSubmittingLocationCorrection,
           isSubmittingVote: isSubmittingVote,
           isFavorite: _isFavorite(toilet),
           onFavorite: () => _toggleFavorite(toilet),
@@ -1606,6 +1703,10 @@ class _HomePageState extends State<HomePage> {
           onReport: () async {
             Navigator.of(context).pop();
             await showReportForm(toilet);
+          },
+          onMove: () async {
+            Navigator.of(context).pop();
+            await _beginLocationCorrection(toilet);
           },
           onRoute: () async {
             Navigator.of(context).pop();
@@ -2364,6 +2465,15 @@ class _HomePageState extends State<HomePage> {
               position: _pickedPosition,
               onCancel: _cancelLocationPicker,
               onConfirm: _confirmPickedLocation,
+              title: _locationCorrectionPlace == null
+                  ? 'Новая точка'
+                  : 'Новое положение точки',
+              confirmLabel: _locationCorrectionPlace == null
+                  ? 'Выбрать эту точку'
+                  : 'Отправить на проверку',
+              pinIcon: _locationCorrectionPlace == null
+                  ? Icons.add_location_alt_rounded
+                  : Icons.edit_location_alt_rounded,
             ),
         ],
       ),
@@ -3961,11 +4071,13 @@ class _ToiletInfoSheet extends StatelessWidget {
   final int dislikes;
   final bool isBuildingRoute;
   final bool isSubmittingReport;
+  final bool isSubmittingLocationCorrection;
   final bool isSubmittingVote;
   final bool isFavorite;
   final Future<bool> Function() onFavorite;
   final ValueChanged<bool> onVote;
   final VoidCallback onReport;
+  final VoidCallback onMove;
   final VoidCallback onRoute;
   final VoidCallback onClose;
 
@@ -3995,11 +4107,13 @@ class _ToiletInfoSheet extends StatelessWidget {
     required this.dislikes,
     required this.isBuildingRoute,
     required this.isSubmittingReport,
+    required this.isSubmittingLocationCorrection,
     required this.isSubmittingVote,
     required this.isFavorite,
     required this.onFavorite,
     required this.onVote,
     required this.onReport,
+    required this.onMove,
     required this.onRoute,
     required this.onClose,
   });
@@ -4515,6 +4629,17 @@ class _ToiletInfoSheet extends StatelessWidget {
                       ),
                     ),
                   ],
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: isSubmittingLocationCorrection
+                          ? null
+                          : onMove,
+                      icon: const Icon(Icons.edit_location_alt_rounded),
+                      label: const Text('Исправить положение на карте'),
+                    ),
+                  ),
                 ],
 
                 const SizedBox(height: 12),

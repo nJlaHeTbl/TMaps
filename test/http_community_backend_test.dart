@@ -153,4 +153,59 @@ void main() {
 
     expect(report['is_free'], isFalse);
   });
+
+  test('loads approved location overrides', () async {
+    final backend = HttpCommunityBackend(
+      baseUrl: 'https://api.tmaps.test',
+      client: MockClient((request) async {
+        expect(request.url.path, '/api/location-overrides');
+        return http.Response(
+          jsonEncode({
+            'overrides': [
+              {
+                'place_key': 'osm:123',
+                'lat': 45.0157,
+                'lng': 78.374,
+              },
+            ],
+          }),
+          200,
+        );
+      }),
+    );
+
+    final overrides = await backend.fetchLocationOverrides();
+    expect(overrides, hasLength(1));
+    expect(overrides.single['place_key'], 'osm:123');
+  });
+
+  test('submits a location correction for moderation', () async {
+    final backend = HttpCommunityBackend(
+      baseUrl: 'https://api.tmaps.test',
+      client: MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/api/location-corrections');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['placeKey'], 'curated:beach-toilet');
+        expect(body['currentLat'], 45.019598);
+        expect(body['proposedLat'], 45.0197);
+        expect(body['username'], 'Мирас');
+        return http.Response(
+          jsonEncode({'id': 9, 'status': 'pending'}),
+          201,
+        );
+      }),
+    );
+
+    final id = await backend.submitLocationCorrection(
+      placeKey: 'curated:beach-toilet',
+      currentLatitude: 45.019598,
+      currentLongitude: 78.399912,
+      proposedLatitude: 45.0197,
+      proposedLongitude: 78.4001,
+      username: 'Мирас',
+    );
+
+    expect(id, 9);
+  });
 }
