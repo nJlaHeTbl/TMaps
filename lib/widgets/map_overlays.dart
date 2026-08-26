@@ -34,7 +34,7 @@ class AddLocationChoiceSheet extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             _LocationChoice(
-              icon: Icons.gps_fixed_rounded,
+              icon: Icons.navigation_rounded,
               title: 'Я нахожусь здесь',
               subtitle: 'GPS возьмёт координаты автоматически',
               gradient: AppPalette.brandGradient,
@@ -203,7 +203,9 @@ class PlacePickerOverlay extends StatelessWidget {
                 ),
               ),
             ),
-            Center(child: IgnorePointer(child: _PickerPin(icon: pinIcon))),
+            Center(
+              child: IgnorePointer(child: _PickerPin(icon: pinIcon)),
+            ),
             Positioned(
               left: 14,
               right: 14,
@@ -315,11 +317,7 @@ class _PickerPin extends StatelessWidget {
             ),
           ],
         ),
-        child: Icon(
-          icon,
-          color: Colors.white,
-          size: 29,
-        ),
+        child: Icon(icon, color: Colors.white, size: 29),
       ),
     );
   }
@@ -456,7 +454,7 @@ class LocationPromptCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: const Icon(
-                  Icons.gps_fixed_rounded,
+                  Icons.navigation_rounded,
                   color: Colors.white,
                   size: 22,
                 ),

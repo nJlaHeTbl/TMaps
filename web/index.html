@@ -33,6 +33,40 @@
 
   <title>TMaps — туалеты рядом</title>
   <link rel="manifest" href="manifest.json">
+
+  <script>
+    // Keep one public address and retire the old ?release=... links.
+    const canonicalUrl = new URL(window.location.href);
+    if (canonicalUrl.searchParams.has('release')) {
+      canonicalUrl.searchParams.delete('release');
+      const query = canonicalUrl.searchParams.toString();
+      window.history.replaceState(
+        null,
+        '',
+        `${canonicalUrl.pathname}${query ? `?${query}` : ''}${canonicalUrl.hash}`,
+      );
+    }
+
+    // Older Flutter builds installed a service worker that could keep an old
+    // TMaps release. Remove only workers inside this app's GitHub Pages scope.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', async () => {
+        try {
+          const appPath = new URL(document.baseURI).pathname;
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(
+            registrations
+              .filter((registration) =>
+                new URL(registration.scope).pathname.startsWith(appPath),
+              )
+              .map((registration) => registration.unregister()),
+          );
+        } catch (error) {
+          console.warn('TMaps could not remove its old offline cache.', error);
+        }
+      });
+    }
+  </script>
 </head>
 <body>
   <!--
@@ -43,6 +77,8 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    {{flutter_bootstrap_js}}
+  </script>
 </body>
 </html>
