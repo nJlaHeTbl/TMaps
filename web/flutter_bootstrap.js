@@ -9,5 +9,10 @@ for (const build of _flutter.buildConfig.builds) {
   }
 }
 
-// TMaps is an online map. Avoid a service worker pinning an outdated release.
-_flutter.loader.load();
+// TMaps is an online map. Retire a legacy worker before loading application
+// code so an installed PWA cannot start with a previous main.dart.js.
+Promise.resolve(window.tmapsPrepareForLatestBuild).then((shouldLoad) => {
+  if (shouldLoad !== false) {
+    _flutter.loader.load();
+  }
+});

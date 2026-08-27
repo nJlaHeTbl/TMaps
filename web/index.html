@@ -47,25 +47,58 @@
       );
     }
 
-    // Older Flutter builds installed a service worker that could keep an old
-    // TMaps release. Remove only workers inside this app's GitHub Pages scope.
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', async () => {
-        try {
-          const appPath = new URL(document.baseURI).pathname;
-          const registrations = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(
-            registrations
-              .filter((registration) =>
-                new URL(registration.scope).pathname.startsWith(appPath),
-              )
-              .map((registration) => registration.unregister()),
-          );
-        } catch (error) {
-          console.warn('TMaps could not remove its old offline cache.', error);
-        }
-      });
-    }
+    // Prepare the page before Flutter downloads main.dart.js. Older releases
+    // installed a service worker that could otherwise serve the previous app
+    // even after a successful deployment.
+    window.tmapsPrepareForLatestBuild = (async () => {
+      const appPath = new URL(document.baseURI).pathname;
+      const hadController =
+        'serviceWorker' in navigator && navigator.serviceWorker.controller;
+
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(
+          registrations
+            .filter((registration) =>
+              new URL(registration.scope).pathname.startsWith(appPath),
+            )
+            .map((registration) => registration.unregister()),
+        );
+      }
+
+      // Delete only cached requests that belong to /TMaps/. Do not clear
+      // unrelated applications hosted on the same github.io origin.
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(
+          cacheNames.map(async (cacheName) => {
+            const cache = await caches.open(cacheName);
+            const requests = await cache.keys();
+            await Promise.all(
+              requests
+                .filter((request) =>
+                  new URL(request.url).pathname.startsWith(appPath),
+                )
+                .map((request) => cache.delete(request)),
+            );
+          }),
+        );
+      }
+
+      // A worker keeps controlling the current document until navigation.
+      // Reload once after unregistering so this very launch is already fresh.
+      const reloadKey = 'tmaps_worker_reset_20260827';
+      if (hadController && sessionStorage.getItem(reloadKey) !== 'done') {
+        sessionStorage.setItem(reloadKey, 'done');
+        window.location.reload();
+        return false;
+      }
+      sessionStorage.removeItem(reloadKey);
+      return true;
+    })().catch((error) => {
+      console.warn('TMaps could not retire its old offline cache.', error);
+      return true;
+    });
   </script>
 </head>
 <body>
