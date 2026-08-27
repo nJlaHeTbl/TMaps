@@ -205,8 +205,10 @@ class _HomePageState extends State<HomePage> {
     };
   }
 
-  List<Map<String, dynamic>> get _pendingSubmissionPlaces =>
-      _submissionHistory.map(_submissionToPlace).toList(growable: false);
+  List<Map<String, dynamic>> get _pendingSubmissionPlaces => _submissionHistory
+      .where((submission) => submission.status == 'pending')
+      .map(_submissionToPlace)
+      .toList(growable: false);
 
   List<Map<String, dynamic>> get allPlaces => [
     ..._pendingSubmissionPlaces,
@@ -322,9 +324,8 @@ class _HomePageState extends State<HomePage> {
     loadUsername();
     unawaited(_loadMapBaseStyle());
     unawaited(_loadFavorites());
-    unawaited(_loadSubmissionHistory());
     unawaited(_startLocation(requestPermission: false));
-    loadToilets();
+    unawaited(_loadInitialCommunityData());
   }
 
   @override
@@ -412,6 +413,11 @@ class _HomePageState extends State<HomePage> {
     final submissions = await _submissionHistoryService.load();
     if (!mounted) return;
     setState(() => _submissionHistory = submissions);
+  }
+
+  Future<void> _loadInitialCommunityData() async {
+    await _loadSubmissionHistory();
+    await loadToilets();
   }
 
   bool _isFavorite(Map<String, dynamic> place) {
@@ -1187,10 +1193,13 @@ class _HomePageState extends State<HomePage> {
   Future<void> loadToilets() async {
     try {
       final loadedToilets = await _toiletRepository.fetchAll();
+      final submissionHistory = await _submissionHistoryService
+          .reconcilePublishedPlaces(loadedToilets);
 
       if (!mounted) return;
 
       setState(() {
+        _submissionHistory = submissionHistory;
         toilets
           ..clear()
           ..addAll(loadedToilets);
@@ -2320,15 +2329,22 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 12),
                     _MapActionButton(
-                      icon: Icons.navigation_rounded,
-                      onPressed: centerOnUser,
-                      tooltip: 'Моё местоположение',
-                      backgroundColor: _followUser
-                          ? AppPalette.sky
-                          : scheme.surface,
-                      foregroundColor: _followUser
-                          ? Colors.white
-                          : scheme.onSurface,
+                      icon: Icons.wc_rounded,
+                      onPressed: isFindingNearest ? null : showNearestToilet,
+                      tooltip: 'WC — ближайший туалет',
+                      backgroundColor: green.withValues(
+                        alpha: isDark ? 0.26 : 0.13,
+                      ),
+                      foregroundColor: green,
+                      child: isFindingNearest
+                          ? const SizedBox(
+                              width: 21,
+                              height: 21,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                              ),
+                            )
+                          : null,
                     ),
                     const SizedBox(height: 12),
                     _MapActionButton(
@@ -2347,22 +2363,15 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 12),
                     _MapActionButton(
-                      icon: Icons.wc_rounded,
-                      onPressed: isFindingNearest ? null : showNearestToilet,
-                      tooltip: 'WC — ближайший туалет',
-                      backgroundColor: green.withValues(
-                        alpha: isDark ? 0.26 : 0.13,
-                      ),
-                      foregroundColor: green,
-                      child: isFindingNearest
-                          ? const SizedBox(
-                              width: 21,
-                              height: 21,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.4,
-                              ),
-                            )
-                          : null,
+                      icon: Icons.navigation_rounded,
+                      onPressed: centerOnUser,
+                      tooltip: 'Моё местоположение',
+                      backgroundColor: _followUser
+                          ? AppPalette.sky
+                          : scheme.surface,
+                      foregroundColor: _followUser
+                          ? Colors.white
+                          : scheme.onSurface,
                     ),
                     if (_submissionHistory.isNotEmpty) ...[
                       const SizedBox(height: 12),

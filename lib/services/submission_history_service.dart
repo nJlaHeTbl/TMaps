@@ -41,6 +41,26 @@ class TrackedSubmission {
   final DateTime createdAt;
   final String status;
 
+  TrackedSubmission copyWith({String? status}) => TrackedSubmission(
+    id: id,
+    latitude: latitude,
+    longitude: longitude,
+    username: username,
+    placeKind: placeKind,
+    name: name,
+    isFree: isFree,
+    cleanliness: cleanliness,
+    condition: condition,
+    hasPaper: hasPaper,
+    hasSoap: hasSoap,
+    wheelchairAccessible: wheelchairAccessible,
+    phoneCharging: phoneCharging,
+    accessType: accessType,
+    comment: comment,
+    createdAt: createdAt,
+    status: status ?? this.status,
+  );
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'lat': latitude,
@@ -118,6 +138,54 @@ class SubmissionHistoryService {
     ];
     await _save(updated);
     return updated;
+  }
+
+  Future<List<TrackedSubmission>> reconcilePublishedPlaces(
+    List<Map<String, dynamic>> publishedPlaces,
+  ) async {
+    final current = await load();
+    var changed = false;
+    final updated = current
+        .map((submission) {
+          if (submission.status != 'pending') return submission;
+
+          final wasPublished = publishedPlaces.any(
+            (place) => _matchesPublishedPlace(submission, place),
+          );
+          if (!wasPublished) return submission;
+
+          changed = true;
+          return submission.copyWith(status: 'approved');
+        })
+        .toList(growable: false);
+
+    if (changed) await _save(updated);
+    return updated;
+  }
+
+  bool _matchesPublishedPlace(
+    TrackedSubmission submission,
+    Map<String, dynamic> place,
+  ) {
+    final latitude = (place['lat'] as num?)?.toDouble();
+    final longitude = (place['lng'] as num?)?.toDouble();
+    if (latitude == null || longitude == null) return false;
+
+    const coordinateTolerance = 0.000001;
+    if ((latitude - submission.latitude).abs() > coordinateTolerance ||
+        (longitude - submission.longitude).abs() > coordinateTolerance) {
+      return false;
+    }
+
+    final publishedKind =
+        place['place_kind']?.toString().trim() ?? 'community_toilet';
+    if (publishedKind != submission.placeKind) return false;
+
+    final publishedUsername = place['username']?.toString().trim() ?? '';
+    final submittedUsername = submission.username.trim();
+    return publishedUsername.isEmpty ||
+        submittedUsername.isEmpty ||
+        publishedUsername.toLowerCase() == submittedUsername.toLowerCase();
   }
 
   Future<void> _save(List<TrackedSubmission> submissions) async {

@@ -73,4 +73,60 @@ void main() {
     expect(restored.single.latitude, 45.1);
     expect(restored.single.isFree, isFalse);
   });
+
+  test('marks a matching published place as approved', () async {
+    SharedPreferences.setMockInitialValues({});
+    final submission = TrackedSubmission(
+      id: 3,
+      latitude: 45.0228440284174,
+      longitude: 78.402359908659,
+      username: 'Мирас',
+      placeKind: 'community_toilet',
+      isFree: true,
+      cleanliness: 3,
+      condition: 'Среднее',
+      createdAt: DateTime.utc(2026, 8, 27),
+    );
+    await service.record(submission);
+
+    final reconciled = await service.reconcilePublishedPlaces([
+      {
+        'id': 19,
+        'lat': 45.0228440284174,
+        'lng': 78.402359908659,
+        'username': 'Мирас',
+        'place_kind': 'community_toilet',
+      },
+    ]);
+
+    expect(reconciled.single.status, 'approved');
+    expect((await service.load()).single.status, 'approved');
+  });
+
+  test('does not approve a different nearby place', () async {
+    SharedPreferences.setMockInitialValues({});
+    final submission = TrackedSubmission(
+      id: 9,
+      latitude: 45.02,
+      longitude: 78.40,
+      username: 'Мирас',
+      placeKind: 'community_toilet',
+      isFree: true,
+      cleanliness: 3,
+      condition: 'Среднее',
+      createdAt: DateTime.utc(2026, 8, 27),
+    );
+    await service.record(submission);
+
+    final reconciled = await service.reconcilePublishedPlaces([
+      {
+        'lat': 45.02001,
+        'lng': 78.40001,
+        'username': 'Мирас',
+        'place_kind': 'cafe',
+      },
+    ]);
+
+    expect(reconciled.single.status, 'pending');
+  });
 }
