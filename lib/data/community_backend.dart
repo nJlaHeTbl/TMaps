@@ -9,6 +9,10 @@ abstract interface class CommunityBackend {
 
   Future<List<Map<String, dynamic>>> fetchLocationOverrides();
 
+  Future<List<Map<String, dynamic>>> fetchCommunityReviewSubmissions();
+
+  Future<List<Map<String, dynamic>>> fetchActiveHelpRequests();
+
   Future<int> submitPlace({
     required double latitude,
     required double longitude,
@@ -23,6 +27,7 @@ abstract interface class CommunityBackend {
     required bool? wheelchairAccessible,
     required bool? phoneCharging,
     required String accessType,
+    required String deviceKey,
     String? comment,
   });
 
@@ -57,6 +62,19 @@ abstract interface class CommunityBackend {
     required String placeKey,
     required String voterKey,
     required bool isCurrent,
+  });
+
+  Future<Map<String, dynamic>> reviewSubmission({
+    required int submissionId,
+    required String voterKey,
+    required bool isValid,
+  });
+
+  Future<DateTime> requestPaperHelp({
+    required String placeKey,
+    required double latitude,
+    required double longitude,
+    required String requesterKey,
   });
 }
 

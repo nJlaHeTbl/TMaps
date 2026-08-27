@@ -48,20 +48,19 @@ class AddLocationChoiceSheet extends StatelessWidget {
               gradient: AppPalette.warmGradient,
               onTap: () => Navigator.pop(context, AddLocationMode.chooseOnMap),
             ),
-            const SizedBox(height: 12),
-            _LocationChoice(
-              icon: Icons.fact_check_rounded,
-              title: submissionCount == 0
-                  ? 'Мои заявки'
-                  : 'Мои заявки · $submissionCount',
-              subtitle: submissionCount == 0
-                  ? 'Здесь появятся отправленные на проверку места'
-                  : 'Открой статус и покажи точку на карте',
-              gradient: const LinearGradient(
-                colors: [Color(0xFF2563EB), Color(0xFF06B6D4)],
+            if (submissionCount > 0) ...[
+              const SizedBox(height: 12),
+              _LocationChoice(
+                icon: Icons.fact_check_rounded,
+                title: 'Мои заявки · $submissionCount',
+                subtitle: 'Открой статус и покажи точку на карте',
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF2563EB), Color(0xFF06B6D4)],
+                ),
+                onTap: () =>
+                    Navigator.pop(context, AddLocationMode.submissions),
               ),
-              onTap: () => Navigator.pop(context, AddLocationMode.submissions),
-            ),
+            ],
           ],
         ),
       ),

@@ -98,4 +98,19 @@ void main() {
       expect(PlaceInfo.feeKnown(place), isTrue);
     });
   });
+
+  test('hides a missing place only after a strong community majority', () {
+    expect(
+      PlaceInfo.isCommunityVerifiedAbsent({'likes': 0, 'dislikes': 2}),
+      isFalse,
+    );
+    expect(
+      PlaceInfo.isCommunityVerifiedAbsent({'likes': 1, 'dislikes': 3}),
+      isTrue,
+    );
+    expect(
+      PlaceInfo.isCommunityVerifiedAbsent({'likes': 2, 'dislikes': 3}),
+      isFalse,
+    );
+  });
 }

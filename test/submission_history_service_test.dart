@@ -129,4 +129,67 @@ void main() {
 
     expect(reconciled.single.status, 'pending');
   });
+
+  test(
+    'moves an unanswered submission to community review after 24h',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final submission = TrackedSubmission(
+        id: 15,
+        latitude: 45.02,
+        longitude: 78.40,
+        username: 'Мирас',
+        placeKind: 'community_toilet',
+        isFree: true,
+        cleanliness: 3,
+        condition: 'Среднее',
+        createdAt: DateTime.utc(2026, 8, 25, 10),
+      );
+      await service.record(submission);
+
+      final before = await service.refreshLifecycle(
+        now: DateTime.utc(2026, 8, 26, 9, 59),
+      );
+      final after = await service.refreshLifecycle(
+        now: DateTime.utc(2026, 8, 26, 10),
+      );
+
+      expect(before.single.status, 'pending');
+      expect(after.single.status, 'community_review');
+      expect(after.single.statusUpdatedAt, DateTime.utc(2026, 8, 26, 10));
+    },
+  );
+
+  test('removes a completed result one day after it was shown', () async {
+    SharedPreferences.setMockInitialValues({});
+    final resolvedAt = DateTime.utc(2026, 8, 26, 8);
+    await service.record(
+      TrackedSubmission(
+        id: 16,
+        latitude: 45.02,
+        longitude: 78.40,
+        username: 'Мирас',
+        placeKind: 'community_toilet',
+        isFree: true,
+        cleanliness: 3,
+        condition: 'Среднее',
+        createdAt: DateTime.utc(2026, 8, 25),
+        status: 'approved',
+        statusUpdatedAt: resolvedAt,
+      ),
+    );
+
+    expect(
+      await service.refreshLifecycle(
+        now: resolvedAt.add(const Duration(hours: 23)),
+      ),
+      hasLength(1),
+    );
+    expect(
+      await service.refreshLifecycle(
+        now: resolvedAt.add(const Duration(hours: 24)),
+      ),
+      isEmpty,
+    );
+  });
 }

@@ -27,7 +27,7 @@ class RouteService {
       '?overview=full&geometries=geojson',
     );
 
-    final response = await http.get(uri);
+    final response = await http.get(uri).timeout(const Duration(seconds: 18));
     if (response.statusCode != 200) {
       throw Exception('Ошибка маршрутизатора: ${response.statusCode}');
     }

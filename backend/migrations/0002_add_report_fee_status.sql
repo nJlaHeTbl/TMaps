@@ -1,2 +1,3 @@
-ALTER TABLE toilet_reports
-  ADD COLUMN is_free INTEGER CHECK (is_free IS NULL OR is_free IN (0, 1));
+-- Kept as an applied migration marker. Fresh databases already receive
+-- `toilet_reports.is_free` from 0001_initial.sql.
+SELECT 1;

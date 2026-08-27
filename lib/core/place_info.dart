@@ -70,6 +70,9 @@ class PlaceInfo {
     if (source == 'pending_submission') {
       return 'pending:${place['submission_id'] ?? place['id']}';
     }
+    if (source == 'community_review_submission') {
+      return 'review:${place['submission_id'] ?? place['id']}';
+    }
 
     return 'community:${place['id'] ?? '${place['lat']}:${place['lng']}'}';
   }
@@ -92,6 +95,9 @@ class PlaceInfo {
   static String kindLabel(Map<String, dynamic> place) {
     if (place['submission_status'] == 'pending') {
       return 'Моя заявка · ожидает проверки';
+    }
+    if (place['submission_status'] == 'community_review') {
+      return 'Нейтральная заявка · нужна проверка рядом';
     }
     return switch (kindOf(place)) {
       PlaceKind.cafe => 'Кафе или ресторан',
@@ -166,5 +172,13 @@ class PlaceInfo {
 
   static int reportCount(Map<String, dynamic> place) {
     return (place['report_count'] as num?)?.toInt() ?? 0;
+  }
+
+  /// Three independent negative votes with a clear majority are required
+  /// before an imported or community place disappears from the public map.
+  static bool isCommunityVerifiedAbsent(Map<String, dynamic> place) {
+    final confirmations = (place['likes'] as num?)?.toInt() ?? 0;
+    final missingReports = (place['dislikes'] as num?)?.toInt() ?? 0;
+    return missingReports >= 3 && missingReports >= confirmations + 2;
   }
 }

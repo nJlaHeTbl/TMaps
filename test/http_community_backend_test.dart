@@ -40,6 +40,7 @@ void main() {
         expect(body['placeKind'], 'community_toilet');
         expect(body['name'], isNull);
         expect(body['isFree'], true);
+        expect(body['deviceKey'], 'device-test-12345');
         return http.Response(jsonEncode({'id': 42, 'status': 'pending'}), 201);
       }),
     );
@@ -58,6 +59,7 @@ void main() {
       wheelchairAccessible: null,
       phoneCharging: null,
       accessType: 'public',
+      deviceKey: 'device-test-12345',
     );
 
     expect(id, 42);
@@ -90,6 +92,7 @@ void main() {
       wheelchairAccessible: null,
       phoneCharging: true,
       accessType: 'customers',
+      deviceKey: 'device-test-12345',
     );
 
     expect(id, 51);
@@ -162,11 +165,7 @@ void main() {
         return http.Response(
           jsonEncode({
             'overrides': [
-              {
-                'place_key': 'osm:123',
-                'lat': 45.0157,
-                'lng': 78.374,
-              },
+              {'place_key': 'osm:123', 'lat': 45.0157, 'lng': 78.374},
             ],
           }),
           200,
@@ -177,6 +176,112 @@ void main() {
     final overrides = await backend.fetchLocationOverrides();
     expect(overrides, hasLength(1));
     expect(overrides.single['place_key'], 'osm:123');
+  });
+
+  test('loads submissions waiting for community review', () async {
+    final backend = HttpCommunityBackend(
+      baseUrl: 'https://api.tmaps.test',
+      client: MockClient((request) async {
+        expect(request.url.path, '/api/community-reviews');
+        return http.Response(
+          jsonEncode({
+            'submissions': [
+              {
+                'submission_id': 12,
+                'lat': 45.01,
+                'lng': 78.39,
+                'confirmation_count': 1,
+              },
+            ],
+          }),
+          200,
+        );
+      }),
+    );
+
+    final submissions = await backend.fetchCommunityReviewSubmissions();
+    expect(submissions.single['submission_id'], 12);
+    expect(submissions.single['confirmation_count'], 1);
+  });
+
+  test('sends an independent community review vote', () async {
+    final backend = HttpCommunityBackend(
+      baseUrl: 'https://api.tmaps.test',
+      client: MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/api/community-reviews/12/votes');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['voterKey'], 'device-test-67890');
+        expect(body['isValid'], true);
+        return http.Response(
+          jsonEncode({
+            'review': {
+              'status': 'pending',
+              'confirmation_count': 1,
+              'rejection_count': 0,
+            },
+          }),
+          200,
+        );
+      }),
+    );
+
+    final result = await backend.reviewSubmission(
+      submissionId: 12,
+      voterKey: 'device-test-67890',
+      isValid: true,
+    );
+    expect(result['status'], 'pending');
+    expect(result['confirmation_count'], 1);
+  });
+
+  test('loads active paper help signals', () async {
+    final backend = HttpCommunityBackend(
+      baseUrl: 'https://api.tmaps.test',
+      client: MockClient((request) async {
+        expect(request.url.path, '/api/help-requests');
+        return http.Response(
+          jsonEncode({
+            'requests': [
+              {
+                'place_key': 'osm:123',
+                'request_type': 'paper',
+                'expires_at': '2026-08-27T12:45:00Z',
+              },
+            ],
+          }),
+          200,
+        );
+      }),
+    );
+
+    final requests = await backend.fetchActiveHelpRequests();
+    expect(requests.single['place_key'], 'osm:123');
+  });
+
+  test('creates a temporary paper help signal', () async {
+    final backend = HttpCommunityBackend(
+      baseUrl: 'https://api.tmaps.test',
+      client: MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/api/help-requests');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['placeKey'], 'osm:123');
+        expect(body['requesterKey'], 'device-test-12345');
+        return http.Response(
+          jsonEncode({'expiresAt': '2026-08-27T12:45:00Z'}),
+          201,
+        );
+      }),
+    );
+
+    final expiresAt = await backend.requestPaperHelp(
+      placeKey: 'osm:123',
+      latitude: 45.01,
+      longitude: 78.39,
+      requesterKey: 'device-test-12345',
+    );
+    expect(expiresAt, DateTime.utc(2026, 8, 27, 12, 45));
   });
 
   test('submits a location correction for moderation', () async {
@@ -190,10 +295,7 @@ void main() {
         expect(body['currentLat'], 45.019598);
         expect(body['proposedLat'], 45.0197);
         expect(body['username'], 'Мирас');
-        return http.Response(
-          jsonEncode({'id': 9, 'status': 'pending'}),
-          201,
-        );
+        return http.Response(jsonEncode({'id': 9, 'status': 'pending'}), 201);
       }),
     );
 

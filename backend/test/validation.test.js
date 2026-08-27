@@ -17,6 +17,7 @@ const validSubmission = {
   wheelchairAccessible: null,
   phoneCharging: null,
   accessType: 'public',
+  deviceKey: null,
   comment: 'Есть бумага и мыло',
 };
 

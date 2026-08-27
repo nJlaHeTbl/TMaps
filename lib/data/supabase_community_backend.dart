@@ -38,6 +38,22 @@ final class SupabaseCommunityBackend implements CommunityBackend {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> fetchCommunityReviewSubmissions() async {
+    final response = await _client.rpc('get_community_review_submissions');
+    return (response as List<dynamic>)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchActiveHelpRequests() async {
+    final response = await _client.rpc('get_active_place_help_requests');
+    return (response as List<dynamic>)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList(growable: false);
+  }
+
+  @override
   Future<int> submitPlace({
     required double latitude,
     required double longitude,
@@ -52,27 +68,38 @@ final class SupabaseCommunityBackend implements CommunityBackend {
     required bool? wheelchairAccessible,
     required bool? phoneCharging,
     required String accessType,
+    required String deviceKey,
     String? comment,
   }) async {
-    final response = await _client.rpc(
-      'submit_place',
-      params: {
-        'p_lat': latitude,
-        'p_lng': longitude,
-        'p_username': username,
-        'p_place_kind': PlaceInfo.valueOfKind(placeKind),
-        'p_name': name,
-        'p_is_free': isFree,
-        'p_cleanliness': cleanliness,
-        'p_condition': condition,
-        'p_has_paper': hasPaper,
-        'p_has_soap': hasSoap,
-        'p_wheelchair_accessible': wheelchairAccessible,
-        'p_phone_charging': phoneCharging,
-        'p_access_type': accessType,
-        'p_comment': comment,
-      },
-    );
+    final params = <String, dynamic>{
+      'p_lat': latitude,
+      'p_lng': longitude,
+      'p_username': username,
+      'p_place_kind': PlaceInfo.valueOfKind(placeKind),
+      'p_name': name,
+      'p_is_free': isFree,
+      'p_cleanliness': cleanliness,
+      'p_condition': condition,
+      'p_has_paper': hasPaper,
+      'p_has_soap': hasSoap,
+      'p_wheelchair_accessible': wheelchairAccessible,
+      'p_phone_charging': phoneCharging,
+      'p_access_type': accessType,
+      'p_submitter_key': deviceKey,
+      'p_comment': comment,
+    };
+    dynamic response;
+    try {
+      response = await _client.rpc('submit_place', params: params);
+    } on PostgrestException catch (error) {
+      // Keep submissions working during a rolling deployment where an older
+      // database migration may be a few minutes behind the web bundle.
+      if (error.code != 'PGRST202') rethrow;
+      response = await _client.rpc(
+        'submit_place',
+        params: Map<String, dynamic>.of(params)..remove('p_submitter_key'),
+      );
+    }
     return (response as num).toInt();
   }
 
@@ -155,5 +182,53 @@ final class SupabaseCommunityBackend implements CommunityBackend {
         'p_is_current': isCurrent,
       },
     );
+  }
+
+  @override
+  Future<Map<String, dynamic>> reviewSubmission({
+    required int submissionId,
+    required String voterKey,
+    required bool isValid,
+  }) async {
+    final response = await _client.rpc(
+      'review_place_submission',
+      params: {
+        'p_submission_id': submissionId,
+        'p_voter_key': voterKey,
+        'p_is_valid': isValid,
+      },
+    );
+    final rows = response as List<dynamic>;
+    if (rows.isEmpty) {
+      throw const CommunityBackendException(
+        'Не удалось получить результат проверки',
+      );
+    }
+    return Map<String, dynamic>.from(rows.first as Map);
+  }
+
+  @override
+  Future<DateTime> requestPaperHelp({
+    required String placeKey,
+    required double latitude,
+    required double longitude,
+    required String requesterKey,
+  }) async {
+    final response = await _client.rpc(
+      'request_place_help',
+      params: {
+        'p_place_key': placeKey,
+        'p_lat': latitude,
+        'p_lng': longitude,
+        'p_requester_key': requesterKey,
+      },
+    );
+    final expiresAt = DateTime.tryParse(response.toString());
+    if (expiresAt == null) {
+      throw const CommunityBackendException(
+        'Не удалось получить срок сигнала помощи',
+      );
+    }
+    return expiresAt;
   }
 }

@@ -160,6 +160,7 @@ class _HomePageState extends State<HomePage> {
   bool isSubmittingReport = false;
   bool isSubmittingLocationCorrection = false;
   bool isSubmittingVote = false;
+  bool isSubmittingHelp = false;
   bool showFreeOnly = false;
   bool showWheelchairOnly = false;
   bool showCommunityOnly = false;
@@ -206,14 +207,26 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<Map<String, dynamic>> get _pendingSubmissionPlaces => _submissionHistory
-      .where((submission) => submission.status == 'pending')
+      .where(
+        (submission) =>
+            submission.status == 'pending' ||
+            submission.status == 'community_review',
+      )
       .map(_submissionToPlace)
       .toList(growable: false);
 
-  List<Map<String, dynamic>> get allPlaces => [
-    ..._pendingSubmissionPlaces,
-    ...toilets,
-  ];
+  List<Map<String, dynamic>> get allPlaces {
+    final remoteSubmissionIds = toilets
+        .map((place) => (place['submission_id'] as num?)?.toInt())
+        .whereType<int>()
+        .toSet();
+    return [
+      ..._pendingSubmissionPlaces.where(
+        (place) => !remoteSubmissionIds.contains(place['submission_id']),
+      ),
+      ...toilets,
+    ];
+  }
 
   List<Map<String, dynamic>> get visibleToilets {
     return allPlaces
@@ -410,7 +423,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadSubmissionHistory() async {
-    final submissions = await _submissionHistoryService.load();
+    final submissions = await _submissionHistoryService.refreshLifecycle();
     if (!mounted) return;
     setState(() => _submissionHistory = submissions);
   }
@@ -1193,13 +1206,14 @@ class _HomePageState extends State<HomePage> {
   Future<void> loadToilets() async {
     try {
       final loadedToilets = await _toiletRepository.fetchAll();
-      final submissionHistory = await _submissionHistoryService
-          .reconcilePublishedPlaces(loadedToilets);
+      await _submissionHistoryService.reconcilePublishedPlaces(loadedToilets);
+      final visibleSubmissionHistory = await _submissionHistoryService
+          .refreshLifecycle();
 
       if (!mounted) return;
 
       setState(() {
-        _submissionHistory = submissionHistory;
+        _submissionHistory = visibleSubmissionHistory;
         toilets
           ..clear()
           ..addAll(loadedToilets);
@@ -1564,6 +1578,7 @@ class _HomePageState extends State<HomePage> {
         wheelchairAccessible: wheelchairAccessible,
         phoneCharging: phoneCharging,
         accessType: accessType,
+        deviceKey: await _deviceVoterKey(),
         comment: comment.trim().isEmpty ? null : comment.trim(),
       );
 
@@ -1643,6 +1658,11 @@ class _HomePageState extends State<HomePage> {
   // =========================================================
 
   void showToiletInfo(Map<String, dynamic> toilet) {
+    if (toilet['submission_status'] == 'community_review') {
+      unawaited(_showCommunityReviewInfo(toilet));
+      return;
+    }
+
     final latestReport = PlaceInfo.latestReport(toilet);
     final String author =
         latestReport?['username']?.toString() ??
@@ -1708,6 +1728,7 @@ class _HomePageState extends State<HomePage> {
           drinkingWater: drinkingWater,
           waterRefill: waterRefill,
           waterTypeLabel: PlaceInfo.waterTypeLabel(toilet),
+          hasActivePaperHelp: toilet['paper_help_active'] == true,
           reportCount: PlaceInfo.reportCount(toilet),
           likes: (toilet['likes'] as num?)?.toInt() ?? 0,
           dislikes: (toilet['dislikes'] as num?)?.toInt() ?? 0,
@@ -1715,6 +1736,7 @@ class _HomePageState extends State<HomePage> {
           isSubmittingReport: isSubmittingReport,
           isSubmittingLocationCorrection: isSubmittingLocationCorrection,
           isSubmittingVote: isSubmittingVote,
+          isSubmittingHelp: isSubmittingHelp,
           isFavorite: _isFavorite(toilet),
           onFavorite: () => _toggleFavorite(toilet),
           onVote: (isCurrent) async {
@@ -1729,6 +1751,10 @@ class _HomePageState extends State<HomePage> {
             Navigator.of(context).pop();
             await _beginLocationCorrection(toilet);
           },
+          onPaperHelp: () async {
+            Navigator.of(context).pop();
+            await _requestPaperHelp(toilet);
+          },
           onRoute: () async {
             Navigator.of(context).pop();
             await buildRoute(toilet);
@@ -1739,6 +1765,127 @@ class _HomePageState extends State<HomePage> {
         );
       },
     );
+  }
+
+  Future<void> _requestPaperHelp(Map<String, dynamic> place) async {
+    if (isSubmittingHelp || place['paper_help_active'] == true) return;
+    try {
+      setState(() => isSubmittingHelp = true);
+      await _toiletRepository.requestPaperHelp(
+        place: place,
+        requesterKey: await _deviceVoterKey(),
+      );
+      await loadToilets();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            '🆘 Сигнал «нужна бумага» виден людям рядом в течение 45 минут',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red.shade700,
+          content: Text('Не удалось отправить сигнал помощи: $error'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => isSubmittingHelp = false);
+    }
+  }
+
+  Future<void> _showCommunityReviewInfo(Map<String, dynamic> submission) async {
+    final submissionId = (submission['submission_id'] as num?)?.toInt();
+    if (submissionId == null) return;
+    final isOwnSubmission = _submissionHistory.any(
+      (tracked) => tracked.id == submissionId,
+    );
+    final action = await showModalBottomSheet<_CommunityReviewAction>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: false,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => _CommunityReviewSheet(
+        title: PlaceInfo.titleOf(submission),
+        kindLabel: PlaceInfo.kindLabel(submission),
+        distance: formatDistance(_distanceTo(submission)),
+        confirmations: (submission['confirmation_count'] as num?)?.toInt() ?? 0,
+        rejections: (submission['rejection_count'] as num?)?.toInt() ?? 0,
+        isOwnSubmission: isOwnSubmission,
+        onConfirm: () =>
+            Navigator.of(sheetContext).pop(_CommunityReviewAction.confirm),
+        onReject: () =>
+            Navigator.of(sheetContext).pop(_CommunityReviewAction.reject),
+        onRoute: () =>
+            Navigator.of(sheetContext).pop(_CommunityReviewAction.route),
+        onClose: () => Navigator.of(sheetContext).pop(),
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == _CommunityReviewAction.route) {
+      await buildRoute(submission);
+      return;
+    }
+    await _reviewCommunitySubmission(
+      submissionId,
+      isValid: action == _CommunityReviewAction.confirm,
+    );
+  }
+
+  Future<void> _reviewCommunitySubmission(
+    int submissionId, {
+    required bool isValid,
+  }) async {
+    if (isSubmittingVote) return;
+    if (_submissionHistory.any((tracked) => tracked.id == submissionId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text('Свою заявку должен подтвердить другой человек'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      setState(() => isSubmittingVote = true);
+      final result = await _toiletRepository.reviewSubmission(
+        submissionId: submissionId,
+        voterKey: await _deviceVoterKey(),
+        isValid: isValid,
+      );
+      await loadToilets();
+      if (!mounted) return;
+
+      final status = result['status']?.toString() ?? 'pending';
+      final message = switch (status) {
+        'approved' => 'Спасибо! Место подтверждено и опубликовано',
+        'rejected' => 'Спасибо! Ошибочная точка снята с проверки',
+        _ =>
+          isValid
+              ? 'Спасибо! Учли подтверждение. Нужен ещё один независимый голос'
+              : 'Спасибо! Учли, что точку не удалось подтвердить',
+      };
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(behavior: SnackBarBehavior.floating, content: Text(message)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red.shade700,
+          content: Text('Не удалось сохранить проверку: $error'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => isSubmittingVote = false);
+    }
   }
 
   Future<void> showReportForm(Map<String, dynamic> place) async {
@@ -1860,17 +2007,7 @@ class _HomePageState extends State<HomePage> {
 
     try {
       setState(() => isSubmittingVote = true);
-      final prefs = await SharedPreferences.getInstance();
-      var voterKey = prefs.getString('voter_key');
-
-      if (voterKey == null || voterKey.length < 12) {
-        final randomPart = Random.secure()
-            .nextInt(0x7fffffff)
-            .toRadixString(16);
-        voterKey =
-            'device-${DateTime.now().microsecondsSinceEpoch}-$randomPart';
-        await prefs.setString('voter_key', voterKey);
-      }
+      final voterKey = await _deviceVoterKey();
 
       await _toiletRepository.castVote(
         place: place,
@@ -1900,6 +2037,17 @@ class _HomePageState extends State<HomePage> {
     } finally {
       if (mounted) setState(() => isSubmittingVote = false);
     }
+  }
+
+  Future<String> _deviceVoterKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    var voterKey = prefs.getString('voter_key');
+    if (voterKey == null || voterKey.length < 12 || voterKey.length > 80) {
+      final randomPart = Random.secure().nextInt(0x7fffffff).toRadixString(16);
+      voterKey = 'device-${DateTime.now().microsecondsSinceEpoch}-$randomPart';
+      await prefs.setString('voter_key', voterKey);
+    }
+    return voterKey;
   }
 
   // =========================================================
@@ -1952,7 +2100,7 @@ class _HomePageState extends State<HomePage> {
             borderRadius: BorderRadius.circular(16),
           ),
           content: Text(
-            '🧭 Маршрут построен — ${formatDistance(result.distance)}',
+            '🚶 Пеший маршрут по дорожкам — ${formatDistance(result.distance)}',
           ),
         ),
       );
@@ -2214,6 +2362,11 @@ class _HomePageState extends State<HomePage> {
                               placeKind: placeKind,
                               isPending:
                                   toilet['submission_status'] == 'pending',
+                              isCommunityReview:
+                                  toilet['submission_status'] ==
+                                  'community_review',
+                              hasActiveHelp:
+                                  toilet['paper_help_active'] == true,
                             ),
                           ),
                         ),
@@ -3492,18 +3645,24 @@ class _PlaceMarker extends StatelessWidget {
   final bool feeKnown;
   final PlaceKind placeKind;
   final bool isPending;
+  final bool isCommunityReview;
+  final bool hasActiveHelp;
 
   const _PlaceMarker({
     required this.isFree,
     required this.feeKnown,
     required this.placeKind,
     this.isPending = false,
+    this.isCommunityReview = false,
+    this.hasActiveHelp = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final (color, icon) = isPending
         ? (const Color(0xFFF59E0B), Icons.hourglass_top_rounded)
+        : isCommunityReview
+        ? (const Color(0xFF64748B), Icons.fact_check_outlined)
         : switch (placeKind) {
             PlaceKind.communityToilet || PlaceKind.publicToilet => (
               _toiletFeeColor(feeKnown: feeKnown, isFree: isFree),
@@ -3557,7 +3716,9 @@ class _PlaceMarker extends StatelessWidget {
               ),
               child: Icon(icon, color: Colors.white, size: 26),
             ),
-            if (isPending || placeKind == PlaceKind.communityToilet)
+            if (isPending ||
+                isCommunityReview ||
+                placeKind == PlaceKind.communityToilet)
               Positioned(
                 top: -3,
                 right: -3,
@@ -3565,7 +3726,7 @@ class _PlaceMarker extends StatelessWidget {
                   width: 20,
                   height: 20,
                   decoration: BoxDecoration(
-                    color: isPending
+                    color: isPending || isCommunityReview
                         ? const Color(0xFF2563EB)
                         : const Color(0xFFDB2777),
                     shape: BoxShape.circle,
@@ -3575,6 +3736,29 @@ class _PlaceMarker extends StatelessWidget {
                     isPending ? Icons.schedule_rounded : Icons.groups_rounded,
                     color: Colors.white,
                     size: 12,
+                  ),
+                ),
+              ),
+            if (hasActiveHelp)
+              Positioned(
+                left: -5,
+                bottom: -4,
+                child: Container(
+                  width: 23,
+                  height: 23,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDC2626),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: const Text(
+                    '!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               ),
@@ -4066,6 +4250,235 @@ class _RoutePanel extends StatelessWidget {
 // CARD / BOTTOM SHEET ТУАЛЕТА
 // =============================================================
 
+enum _CommunityReviewAction { confirm, reject, route }
+
+class _CommunityReviewSheet extends StatelessWidget {
+  const _CommunityReviewSheet({
+    required this.title,
+    required this.kindLabel,
+    required this.distance,
+    required this.confirmations,
+    required this.rejections,
+    required this.isOwnSubmission,
+    required this.onConfirm,
+    required this.onReject,
+    required this.onRoute,
+    required this.onClose,
+  });
+
+  final String title;
+  final String kindLabel;
+  final String distance;
+  final int confirmations;
+  final int rejections;
+  final bool isOwnSubmission;
+  final VoidCallback onConfirm;
+  final VoidCallback onReject;
+  final VoidCallback onRoute;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    const reviewColor = Color(0xFF475569);
+    return SafeArea(
+      child: Container(
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 22),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: scheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      color: reviewColor.withValues(alpha: 0.13),
+                      borderRadius: BorderRadius.circular(19),
+                    ),
+                    child: const Icon(
+                      Icons.fact_check_outlined,
+                      color: reviewColor,
+                      size: 32,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 23,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$kindLabel · $distance',
+                          style: const TextStyle(
+                            color: AppPalette.muted,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(onPressed: onClose, icon: const Icon(Icons.close)),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(15),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0EA5E9).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: const Color(0xFF0EA5E9).withValues(alpha: 0.22),
+                  ),
+                ),
+                child: const Text(
+                  'Администратор не ответил за 24 часа. Заявка стала нейтральной: люди рядом могут проверить, существует ли это место. Для публикации нужны независимые подтверждения.',
+                  style: TextStyle(fontWeight: FontWeight.w700, height: 1.35),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: _ReviewCountTile(
+                      icon: Icons.check_circle_outline_rounded,
+                      label: 'Подтвердили',
+                      count: confirmations,
+                      color: const Color(0xFF16A34A),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _ReviewCountTile(
+                      icon: Icons.help_outline_rounded,
+                      label: 'Не нашли',
+                      count: rejections,
+                      color: const Color(0xFFDC2626),
+                    ),
+                  ),
+                ],
+              ),
+              if (isOwnSubmission) ...[
+                const SizedBox(height: 14),
+                const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.shield_outlined, color: Color(0xFFD97706)),
+                    SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        'Это твоя заявка. Чтобы проверка была честной, подтвердить её должен другой человек со своего телефона.',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: isOwnSubmission ? null : onConfirm,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF16A34A),
+                      ),
+                      icon: const Icon(Icons.check_rounded),
+                      label: const Text('Место есть'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: isOwnSubmission ? null : onReject,
+                      icon: const Icon(Icons.close_rounded),
+                      label: const Text('Не нашёл'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onRoute,
+                  icon: const Icon(Icons.directions_rounded),
+                  label: const Text('Построить маршрут для проверки'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReviewCountTile extends StatelessWidget {
+  const _ReviewCountTile({
+    required this.icon,
+    required this.label,
+    required this.count,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final int count;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$label: $count',
+              style: TextStyle(color: color, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ToiletInfoSheet extends StatelessWidget {
   final String title;
   final String kindLabel;
@@ -4087,6 +4500,7 @@ class _ToiletInfoSheet extends StatelessWidget {
   final bool? drinkingWater;
   final bool? waterRefill;
   final String waterTypeLabel;
+  final bool hasActivePaperHelp;
   final int reportCount;
   final int likes;
   final int dislikes;
@@ -4094,11 +4508,13 @@ class _ToiletInfoSheet extends StatelessWidget {
   final bool isSubmittingReport;
   final bool isSubmittingLocationCorrection;
   final bool isSubmittingVote;
+  final bool isSubmittingHelp;
   final bool isFavorite;
   final Future<bool> Function() onFavorite;
   final ValueChanged<bool> onVote;
   final VoidCallback onReport;
   final VoidCallback onMove;
+  final VoidCallback onPaperHelp;
   final VoidCallback onRoute;
   final VoidCallback onClose;
 
@@ -4123,6 +4539,7 @@ class _ToiletInfoSheet extends StatelessWidget {
     required this.drinkingWater,
     required this.waterRefill,
     required this.waterTypeLabel,
+    required this.hasActivePaperHelp,
     required this.reportCount,
     required this.likes,
     required this.dislikes,
@@ -4130,11 +4547,13 @@ class _ToiletInfoSheet extends StatelessWidget {
     required this.isSubmittingReport,
     required this.isSubmittingLocationCorrection,
     required this.isSubmittingVote,
+    required this.isSubmittingHelp,
     required this.isFavorite,
     required this.onFavorite,
     required this.onVote,
     required this.onReport,
     required this.onMove,
+    required this.onPaperHelp,
     required this.onRoute,
     required this.onClose,
   });
@@ -4550,6 +4969,65 @@ class _ToiletInfoSheet extends StatelessWidget {
                   ],
                 ),
 
+                if (!isPending &&
+                    hasToilet &&
+                    (hasPaper == false || hasActivePaperHelp)) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDC2626).withValues(alpha: 0.09),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: const Color(0xFFDC2626).withValues(alpha: 0.22),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          hasActivePaperHelp
+                              ? '🆘 Сейчас здесь нужна бумага'
+                              : 'Нет бумаги? Попроси помощи рядом',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          hasActivePaperHelp
+                              ? 'Сигнал уже виден на карте и сам исчезнет через 45 минут.'
+                              : 'TMaps отметит туалет красным значком на 45 минут. Не используй эту кнопку для экстренных ситуаций.',
+                          style: const TextStyle(
+                            color: AppPalette.muted,
+                            height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: hasActivePaperHelp || isSubmittingHelp
+                                ? null
+                                : onPaperHelp,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFDC2626),
+                            ),
+                            icon: const Icon(Icons.sos_rounded),
+                            label: Text(
+                              hasActivePaperHelp
+                                  ? 'Сигнал помощи активен'
+                                  : '🆘 Нужна бумага',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 if (comment.isNotEmpty) ...[
                   const SizedBox(height: 18),
                   Container(
@@ -4625,7 +5103,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                               ? null
                               : () => onVote(false),
                           icon: const Icon(Icons.report_problem_rounded),
-                          label: Text('Проблема · $dislikes'),
+                          label: Text('Нет на месте · $dislikes'),
                           style: FilledButton.styleFrom(
                             foregroundColor: const Color(0xFFB45309),
                             backgroundColor: const Color(0xFFFFF7ED),
@@ -4676,11 +5154,11 @@ class _ToiletInfoSheet extends StatelessWidget {
                               color: Colors.white,
                             ),
                           )
-                        : const Icon(Icons.directions_rounded),
+                        : const Icon(Icons.directions_walk_rounded),
                     label: Text(
                       isBuildingRoute
                           ? 'Строим маршрут...'
-                          : 'Построить маршрут',
+                          : 'Пешком по дорожкам',
                     ),
                   ),
                 ),
@@ -5370,7 +5848,7 @@ class _SubmissionHistorySheet extends StatelessWidget {
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'На проверке точку видишь только ты. После одобрения она станет общей и появится у всех.',
+                        'Сначала заявку видишь только ты. Через 24 часа без ответа она станет нейтральной и появится у людей рядом для проверки.',
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
@@ -5446,6 +5924,11 @@ class _SubmissionHistorySheet extends StatelessWidget {
                       'Нужно уточнение',
                       Icons.info_outline_rounded,
                       const Color(0xFFDC2626),
+                    ),
+                    'community_review' => (
+                      'Нужна проверка людьми рядом',
+                      Icons.groups_rounded,
+                      const Color(0xFF2563EB),
                     ),
                     _ => (
                       'Ожидает проверки',

@@ -12,5 +12,5 @@ abstract final class AppConfig {
   static bool get usesCommunityApi => communityApiBaseUrl.trim().isNotEmpty;
 
   static const routingBaseUrl =
-      'https://router.project-osrm.org/route/v1/driving';
+      'https://routing.openstreetmap.de/routed-foot/route/v1/driving';
 }

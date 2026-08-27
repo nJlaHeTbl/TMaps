@@ -30,6 +30,14 @@ final class HttpCommunityBackend implements CommunityBackend {
       _getList('/api/location-overrides', 'overrides');
 
   @override
+  Future<List<Map<String, dynamic>>> fetchCommunityReviewSubmissions() =>
+      _getList('/api/community-reviews', 'submissions');
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchActiveHelpRequests() =>
+      _getList('/api/help-requests', 'requests');
+
+  @override
   Future<int> submitPlace({
     required double latitude,
     required double longitude,
@@ -44,6 +52,7 @@ final class HttpCommunityBackend implements CommunityBackend {
     required bool? wheelchairAccessible,
     required bool? phoneCharging,
     required String accessType,
+    required String deviceKey,
     String? comment,
   }) async {
     final payload = await _send('/api/submissions', {
@@ -60,6 +69,7 @@ final class HttpCommunityBackend implements CommunityBackend {
       'wheelchairAccessible': wheelchairAccessible,
       'phoneCharging': phoneCharging,
       'accessType': accessType,
+      'deviceKey': deviceKey,
       'comment': comment,
     });
     return (payload['id'] as num).toInt();
@@ -134,6 +144,41 @@ final class HttpCommunityBackend implements CommunityBackend {
       'voterKey': voterKey,
       'isCurrent': isCurrent,
     });
+  }
+
+  @override
+  Future<Map<String, dynamic>> reviewSubmission({
+    required int submissionId,
+    required String voterKey,
+    required bool isValid,
+  }) async {
+    final payload = await _send('/api/community-reviews/$submissionId/votes', {
+      'voterKey': voterKey,
+      'isValid': isValid,
+    });
+    return Map<String, dynamic>.from(payload['review'] as Map);
+  }
+
+  @override
+  Future<DateTime> requestPaperHelp({
+    required String placeKey,
+    required double latitude,
+    required double longitude,
+    required String requesterKey,
+  }) async {
+    final payload = await _send('/api/help-requests', {
+      'placeKey': placeKey,
+      'lat': latitude,
+      'lng': longitude,
+      'requesterKey': requesterKey,
+    });
+    final expiresAt = DateTime.tryParse(payload['expiresAt']?.toString() ?? '');
+    if (expiresAt == null) {
+      throw const CommunityBackendException(
+        'Не удалось получить срок сигнала помощи',
+      );
+    }
+    return expiresAt;
   }
 
   Future<List<Map<String, dynamic>>> _getList(String path, String field) async {

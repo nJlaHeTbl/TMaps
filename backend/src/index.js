@@ -104,6 +104,48 @@ async function route(request, env) {
     ).all();
     return json(request, env, { overrides: normalizeRows(result.results) });
   }
+  if (method === 'GET' && url.pathname === '/api/community-reviews') {
+    const result = await env.DB.prepare(
+      `SELECT
+         submission.id AS submission_id,
+         submission.lat,
+         submission.lng,
+         submission.place_kind,
+         submission.name,
+         submission.is_free,
+         submission.cleanliness,
+         submission.condition,
+         submission.has_paper,
+         submission.has_soap,
+         submission.wheelchair_accessible,
+         submission.phone_charging,
+         submission.access_type,
+         submission.created_at,
+         datetime(submission.created_at, '+24 hours') AS review_available_at,
+         SUM(CASE WHEN vote.is_valid = 1 THEN 1 ELSE 0 END) AS confirmation_count,
+         SUM(CASE WHEN vote.is_valid = 0 THEN 1 ELSE 0 END) AS rejection_count
+       FROM place_submissions AS submission
+       LEFT JOIN place_submission_review_votes AS vote
+         ON vote.submission_id = submission.id
+       WHERE submission.status = 'pending'
+         AND datetime(submission.created_at) <= datetime('now', '-24 hours')
+       GROUP BY submission.id
+       ORDER BY submission.created_at DESC
+       LIMIT 500`,
+    ).all();
+    return json(request, env, {
+      submissions: normalizeRows(result.results),
+    });
+  }
+  if (method === 'GET' && url.pathname === '/api/help-requests') {
+    const result = await env.DB.prepare(
+      `SELECT place_key, request_type, created_at, expires_at
+       FROM place_help_requests
+       WHERE datetime(expires_at) > datetime('now')
+       ORDER BY created_at DESC LIMIT 500`,
+    ).all();
+    return json(request, env, { requests: result.results });
+  }
   if (method === 'POST' && url.pathname === '/api/submissions') {
     return submitPlace(request, env);
   }
@@ -115,6 +157,20 @@ async function route(request, env) {
   }
   if (method === 'POST' && url.pathname === '/api/location-corrections') {
     return submitLocationCorrection(request, env);
+  }
+  if (method === 'POST' && url.pathname === '/api/help-requests') {
+    return requestPaperHelp(request, env);
+  }
+
+  const communityReviewMatch = url.pathname.match(
+    /^\/api\/community-reviews\/(\d+)\/votes$/,
+  );
+  if (method === 'POST' && communityReviewMatch) {
+    return reviewSubmission(
+      request,
+      env,
+      Number(communityReviewMatch[1]),
+    );
   }
   if (method === 'GET' && url.pathname === '/api/admin/submissions') {
     requireAdmin(request, env);
@@ -177,8 +233,8 @@ async function submitPlace(request, env) {
     `INSERT INTO place_submissions
       (lat, lng, username, place_kind, name, is_free, cleanliness, condition,
        has_paper, has_soap, wheelchair_accessible, phone_charging,
-       access_type, comment)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       access_type, submitter_key, comment)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      RETURNING id`,
   ).bind(
     input.lat,
@@ -194,6 +250,7 @@ async function submitPlace(request, env) {
     nullableBoolInt(input.wheelchairAccessible),
     nullableBoolInt(input.phoneCharging),
     input.accessType,
+    input.deviceKey,
     input.comment,
   ).first();
 
@@ -251,6 +308,131 @@ async function castVote(request, env) {
   ).bind(placeKey, voterKey, boolInt(body.isCurrent)).run();
 
   return json(request, env, { ok: true });
+}
+
+async function reviewSubmission(request, env, submissionId) {
+  const body = await readJson(request);
+  const voterKey = requiredText(body.voterKey, 'Ключ устройства', 12, 80);
+  if (typeof body.isValid !== 'boolean') {
+    throw new HttpError(400, 'Некорректное подтверждение');
+  }
+  await enforceRateLimit(request, env, 'submission-review', 60, 3600);
+
+  const submission = await env.DB.prepare(
+    `SELECT * FROM place_submissions
+     WHERE id = ? AND status = 'pending'
+       AND datetime(created_at) <= datetime('now', '-24 hours')`,
+  ).bind(submissionId).first();
+  if (!submission) {
+    throw new HttpError(404, 'Заявка ещё закрыта или уже обработана');
+  }
+  if (submission.submitter_key && submission.submitter_key === voterKey) {
+    throw new HttpError(400, 'Свою заявку должен подтвердить другой человек');
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO place_submission_review_votes
+       (submission_id, voter_key, is_valid)
+     VALUES (?, ?, ?)
+     ON CONFLICT (submission_id, voter_key) DO UPDATE SET
+       is_valid = excluded.is_valid,
+       updated_at = CURRENT_TIMESTAMP`,
+  ).bind(submissionId, voterKey, boolInt(body.isValid)).run();
+
+  const totals = await env.DB.prepare(
+    `SELECT
+       SUM(CASE WHEN is_valid = 1 THEN 1 ELSE 0 END) AS confirmations,
+       SUM(CASE WHEN is_valid = 0 THEN 1 ELSE 0 END) AS rejections
+     FROM place_submission_review_votes WHERE submission_id = ?`,
+  ).bind(submissionId).first();
+  const confirmations = Number(totals.confirmations || 0);
+  const rejections = Number(totals.rejections || 0);
+  let status = 'pending';
+
+  if (confirmations >= 2 && confirmations >= rejections + 2) {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO toilets
+          (lat, lng, username, name, is_free, cleanliness, condition, comment,
+           place_kind, has_toilet, has_paper, has_soap, wheelchair_accessible,
+           phone_charging, access_type, submission_id)
+         SELECT lat, lng, username, name, is_free, cleanliness, condition, comment,
+           place_kind,
+           CASE WHEN place_kind = 'community_toilet' THEN 1 ELSE 0 END,
+           has_paper, has_soap, wheelchair_accessible, phone_charging,
+           access_type, id
+         FROM place_submissions WHERE id = ? AND status = 'pending'`,
+      ).bind(submissionId),
+      env.DB.prepare(
+        `UPDATE place_submissions SET
+           status = 'approved', reviewed_at = CURRENT_TIMESTAMP,
+           published_toilet_id = (SELECT id FROM toilets WHERE submission_id = ?)
+         WHERE id = ? AND status = 'pending'`,
+      ).bind(submissionId, submissionId),
+      duplicateSubmissionDismissal(env, submission),
+    ]);
+    status = 'approved';
+  } else if (rejections >= 3 && rejections >= confirmations + 2) {
+    await env.DB.prepare(
+      `UPDATE place_submissions
+       SET status = 'rejected', reviewed_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'pending'`,
+    ).bind(submissionId).run();
+    status = 'rejected';
+  }
+
+  return json(request, env, {
+    review: {
+      status,
+      confirmation_count: confirmations,
+      rejection_count: rejections,
+    },
+  });
+}
+
+async function requestPaperHelp(request, env) {
+  const body = await readJson(request);
+  const placeKey = requiredText(body.placeKey, 'Точка', 3, 120);
+  const lat = boundedNumber(body.lat, 'Широта', -90, 90);
+  const lng = boundedNumber(body.lng, 'Долгота', -180, 180);
+  const requesterKey = requiredText(
+    body.requesterKey,
+    'Ключ устройства',
+    12,
+    80,
+  );
+  await enforceRateLimit(request, env, 'paper-help', 10, 3600);
+
+  const expiresAt = new Date(Date.now() + 45 * 60 * 1000).toISOString();
+  await env.DB.prepare(
+    `INSERT INTO place_help_requests
+       (place_key, lat, lng, requester_key, request_type, created_at, expires_at)
+     VALUES (?, ?, ?, ?, 'paper', CURRENT_TIMESTAMP, ?)
+     ON CONFLICT (place_key) DO UPDATE SET
+       lat = excluded.lat,
+       lng = excluded.lng,
+       requester_key = excluded.requester_key,
+       request_type = excluded.request_type,
+       created_at = excluded.created_at,
+       expires_at = excluded.expires_at`,
+  ).bind(placeKey, lat, lng, requesterKey, expiresAt).run();
+  return json(request, env, { expiresAt }, 201);
+}
+
+function duplicateSubmissionDismissal(env, submission) {
+  return env.DB.prepare(
+    `UPDATE place_submissions SET status = 'rejected', reviewed_at = CURRENT_TIMESTAMP
+     WHERE status = 'pending' AND id <> ? AND place_kind = ?
+       AND abs(lat - ?) <= 0.00008 AND abs(lng - ?) <= 0.00008
+       AND ((name IS NULL AND ? IS NULL) OR lower(trim(name)) = lower(trim(?)))`,
+  ).bind(
+    submission.id,
+    submission.place_kind,
+    submission.lat,
+    submission.lng,
+    submission.name,
+    submission.name,
+  );
 }
 
 async function submitLocationCorrection(request, env) {
@@ -319,6 +501,7 @@ async function moderateSubmission(request, env, id) {
          published_toilet_id = (SELECT id FROM toilets WHERE submission_id = ?)
        WHERE id = ? AND status = 'pending'`,
     ).bind(id, id),
+    duplicateSubmissionDismissal(env, submission),
   ];
   await env.DB.batch(statements);
   return json(request, env, { ok: true, status });
@@ -397,6 +580,9 @@ function validateSubmission(body) {
     }
   }
   const comment = optionalSafeText(body.comment, 'Комментарий', 300);
+  const deviceKey = body.deviceKey === null || body.deviceKey === undefined
+    ? null
+    : requiredText(body.deviceKey, 'Ключ устройства', 12, 80);
   return {
     lat,
     lng,
@@ -411,6 +597,7 @@ function validateSubmission(body) {
     wheelchairAccessible: body.wheelchairAccessible,
     phoneCharging: body.phoneCharging,
     accessType,
+    deviceKey,
     comment,
   };
 }

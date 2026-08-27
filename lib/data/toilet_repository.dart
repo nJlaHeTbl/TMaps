@@ -28,21 +28,58 @@ class ToiletRepository {
       safe(_fetchReports()),
       safe(_fetchVoteTotals()),
       safe(_backend.fetchLocationOverrides()),
+      safe(_fetchCommunityReviewSubmissions()),
+      safe(_backend.fetchActiveHelpRequests()),
     ]);
     final openStreetMapToilets = results[0];
     final communityToilets = results[1];
     final reports = results[2];
     final voteTotals = results[3];
     final locationOverrides = results[4];
+    final communityReviewSubmissions = results[5];
+    final activeHelpRequests = results[6];
 
+    final places = _attachCommunityData(
+      [
+        ...communityReviewSubmissions,
+        ...communityToilets,
+        ...openStreetMapToilets,
+      ],
+      reports,
+      voteTotals,
+      activeHelpRequests,
+    );
     return _applyLocationOverrides(
-      _attachCommunityData(
-        [...communityToilets, ...openStreetMapToilets],
-        reports,
-        voteTotals,
-      ),
+      places
+          .where((place) => !PlaceInfo.isCommunityVerifiedAbsent(place))
+          .toList(),
       locationOverrides,
     );
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchCommunityReviewSubmissions() async {
+    final response = await _backend.fetchCommunityReviewSubmissions();
+    return response
+        .map(Map<String, dynamic>.from)
+        .where(ContentGuard.isSafeCommunityToilet)
+        .map((submission) {
+          final kind = PlaceInfo.kindOf(submission);
+          return {
+            ...submission,
+            'id': 'community_review_${submission['submission_id']}',
+            'submission_status': 'community_review',
+            'has_toilet':
+                submission['has_toilet'] ??
+                (kind == PlaceKind.communityToilet ||
+                    kind == PlaceKind.publicToilet),
+            'fee_known':
+                submission['fee_known'] ??
+                (kind == PlaceKind.communityToilet ||
+                    kind == PlaceKind.publicToilet),
+            'source': 'community_review_submission',
+          };
+        })
+        .toList(growable: false);
   }
 
   Future<List<Map<String, dynamic>>> _fetchCommunityToilets() async {
@@ -102,25 +139,28 @@ class ToiletRepository {
           override['place_key'].toString(): override,
     };
 
-    return places.map((place) {
-      final override = overridesByPlace[PlaceInfo.keyOf(place)];
-      if (override == null) return place;
-      return {
-        ...place,
-        'original_lat': place['lat'],
-        'original_lng': place['lng'],
-        'lat': override['lat'],
-        'lng': override['lng'],
-        'location_corrected': true,
-        'location_corrected_at': override['updated_at'],
-      };
-    }).toList(growable: false);
+    return places
+        .map((place) {
+          final override = overridesByPlace[PlaceInfo.keyOf(place)];
+          if (override == null) return place;
+          return {
+            ...place,
+            'original_lat': place['lat'],
+            'original_lng': place['lng'],
+            'lat': override['lat'],
+            'lng': override['lng'],
+            'location_corrected': true,
+            'location_corrected_at': override['updated_at'],
+          };
+        })
+        .toList(growable: false);
   }
 
   List<Map<String, dynamic>> _attachCommunityData(
     List<Map<String, dynamic>> places,
     List<Map<String, dynamic>> reports,
     List<Map<String, dynamic>> voteTotals,
+    List<Map<String, dynamic>> activeHelpRequests,
   ) {
     final reportsByPlace = <String, List<Map<String, dynamic>>>{};
 
@@ -134,18 +174,27 @@ class ToiletRepository {
       for (final totals in voteTotals)
         if (totals['place_key'] != null) totals['place_key'].toString(): totals,
     };
+    final helpByPlace = {
+      for (final request in activeHelpRequests)
+        if (request['place_key'] != null)
+          request['place_key'].toString(): request,
+    };
 
     return places
         .map((place) {
           final key = PlaceInfo.keyOf(place);
           final placeReports = reportsByPlace[key] ?? const [];
           final votes = votesByPlace[key];
+          final helpRequest = helpByPlace[key];
           return {
             ...place,
             'place_key': key,
             'report_count': placeReports.length,
             'likes': (votes?['likes'] as num?)?.toInt() ?? 0,
             'dislikes': (votes?['dislikes'] as num?)?.toInt() ?? 0,
+            'paper_help_active': helpRequest != null,
+            if (helpRequest != null)
+              'paper_help_expires_at': helpRequest['expires_at'],
             if (placeReports.isNotEmpty) 'latest_report': placeReports.first,
           };
         })
@@ -166,6 +215,7 @@ class ToiletRepository {
     required bool? wheelchairAccessible,
     required bool? phoneCharging,
     required String accessType,
+    required String deviceKey,
     String? comment,
   }) async {
     final usernameIssue = ContentGuard.validateUsername(username);
@@ -187,6 +237,7 @@ class ToiletRepository {
       wheelchairAccessible: wheelchairAccessible,
       phoneCharging: phoneCharging,
       accessType: accessType,
+      deviceKey: deviceKey,
       comment: comment,
     );
   }
@@ -238,6 +289,36 @@ class ToiletRepository {
       placeKey: PlaceInfo.keyOf(place),
       voterKey: voterKey,
       isCurrent: isCurrent,
+    );
+  }
+
+  Future<Map<String, dynamic>> reviewSubmission({
+    required int submissionId,
+    required String voterKey,
+    required bool isValid,
+  }) {
+    if (voterKey.length < 12 || voterKey.length > 80) {
+      throw ArgumentError('Некорректный ключ устройства');
+    }
+    return _backend.reviewSubmission(
+      submissionId: submissionId,
+      voterKey: voterKey,
+      isValid: isValid,
+    );
+  }
+
+  Future<DateTime> requestPaperHelp({
+    required Map<String, dynamic> place,
+    required String requesterKey,
+  }) {
+    if (!PlaceInfo.hasToilet(place)) {
+      throw ArgumentError('Сигнал помощи доступен только для туалетов');
+    }
+    return _backend.requestPaperHelp(
+      placeKey: PlaceInfo.keyOf(place),
+      latitude: (place['lat'] as num).toDouble(),
+      longitude: (place['lng'] as num).toDouble(),
+      requesterKey: requesterKey,
     );
   }
 
