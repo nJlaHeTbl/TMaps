@@ -109,8 +109,15 @@ class ToiletRepository {
       final json = await rootBundle.loadString(assetPath);
       final payload = jsonDecode(json) as Map<String, dynamic>;
       final places = (payload['places'] ?? payload['toilets']) as List<dynamic>;
+      final generatedAt = payload['generated_at']?.toString();
       return places
-          .map((place) => Map<String, dynamic>.from(place as Map))
+          .map(
+            (place) => <String, dynamic>{
+              ...Map<String, dynamic>.from(place as Map),
+              if (generatedAt != null && generatedAt.isNotEmpty)
+                'dataset_generated_at': generatedAt,
+            },
+          )
           .toList(growable: false);
     }
 

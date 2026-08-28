@@ -18,7 +18,9 @@ import 'core/map_base_style.dart';
 import 'core/map_display_policy.dart';
 import 'core/map_marker_clustering.dart';
 import 'core/map_tile_policy.dart';
+import 'core/place_freshness.dart';
 import 'core/place_info.dart';
+import 'core/quick_need_finder.dart';
 import 'core/place_submission_defaults.dart';
 import 'core/place_visibility_policy.dart';
 import 'data/http_community_backend.dart';
@@ -28,6 +30,7 @@ import 'presentation/place_category_style.dart';
 import 'services/favorites_service.dart';
 import 'services/live_location_service.dart';
 import 'services/map_style_preference_service.dart';
+import 'services/place_share_service.dart';
 import 'services/route_service.dart';
 import 'services/submission_history_service.dart';
 import 'services/theme_preference_service.dart';
@@ -128,6 +131,7 @@ class _HomePageState extends State<HomePage> {
   final FavoritesService _favoritesService = const FavoritesService();
   final MapStylePreferenceService _mapStylePreferenceService =
       const MapStylePreferenceService();
+  final PlaceShareService _placeShareService = const PlaceShareService();
   final SubmissionHistoryService _submissionHistoryService =
       const SubmissionHistoryService();
   final LiveLocationService _locationService = LiveLocationService();
@@ -157,6 +161,7 @@ class _HomePageState extends State<HomePage> {
   bool isAddingToilet = false;
   bool isBuildingRoute = false;
   bool isFindingNearest = false;
+  bool isOpeningQuickNeeds = false;
   bool isSubmittingReport = false;
   bool isSubmittingLocationCorrection = false;
   bool isSubmittingVote = false;
@@ -169,6 +174,7 @@ class _HomePageState extends State<HomePage> {
   bool showEvCharging = true;
   bool showAllCategories = false;
   bool showToiletPlaces = true;
+  bool _sharedPlaceHandled = false;
   Set<PlaceKind> selectedCategories = <PlaceKind>{};
   int _mapAnimationGeneration = 0;
 
@@ -365,6 +371,8 @@ class _HomePageState extends State<HomePage> {
         username = savedUsername;
       });
 
+      unawaited(_focusSharedPlaceIfReady());
+
       return;
     }
 
@@ -431,6 +439,17 @@ class _HomePageState extends State<HomePage> {
   Future<void> _loadInitialCommunityData() async {
     await _loadSubmissionHistory();
     await loadToilets();
+    await _focusSharedPlaceIfReady();
+  }
+
+  Future<void> _focusSharedPlaceIfReady() async {
+    if (_sharedPlaceHandled || username == null || allPlaces.isEmpty) return;
+    final place = _placeShareService.findLinkedPlace(Uri.base, allPlaces);
+    if (place == null) return;
+
+    _sharedPlaceHandled = true;
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    if (mounted) await _focusOnPlace(place);
   }
 
   bool _isFavorite(Map<String, dynamic> place) {
@@ -556,6 +575,7 @@ class _HomePageState extends State<HomePage> {
                       });
 
                       Navigator.of(context).pop();
+                      unawaited(_focusSharedPlaceIfReady());
                       unawaited(
                         _startLocation(requestPermission: true, center: true),
                       );
@@ -662,6 +682,69 @@ class _HomePageState extends State<HomePage> {
           : 'Не удалось получить координаты. Проверь GPS и интернет',
     LocationAccessState.ready => 'Геопозиция работает',
   };
+
+  Future<void> showQuickNeeds() async {
+    if (isOpeningQuickNeeds) return;
+    setState(() => isOpeningQuickNeeds = true);
+
+    try {
+      final locationFound = await _startLocation(requestPermission: true);
+      if (!locationFound) {
+        await _presentLocationHelp();
+        return;
+      }
+
+      final results = QuickNeedFinder.findNearest(
+        places: allPlaces,
+        origin: currentPosition,
+      );
+      if (!mounted) return;
+      if (results.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Text('Рядом пока нет подтверждённых полезных мест'),
+          ),
+        );
+        return;
+      }
+
+      final selected = await showModalBottomSheet<Map<String, dynamic>>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (sheetContext) => _QuickNeedsSheet(
+          results: results,
+          distanceLabel: formatDistance,
+          onSelected: (place) => Navigator.of(sheetContext).pop(place),
+        ),
+      );
+      if (selected != null && mounted) await _focusOnPlace(selected);
+    } finally {
+      if (mounted) setState(() => isOpeningQuickNeeds = false);
+    }
+  }
+
+  Future<void> _copyPlaceLink(Map<String, dynamic> place) async {
+    try {
+      await _placeShareService.copyLink(place);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text('Ссылка на место скопирована — отправь её другу'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text('Не удалось скопировать ссылку'),
+        ),
+      );
+    }
+  }
 
   Future<void> showNearestToilet() async {
     if (isFindingNearest) return;
@@ -1728,6 +1811,7 @@ class _HomePageState extends State<HomePage> {
           drinkingWater: drinkingWater,
           waterRefill: waterRefill,
           waterTypeLabel: PlaceInfo.waterTypeLabel(toilet),
+          freshness: PlaceFreshnessResolver.resolve(toilet),
           hasActivePaperHelp: toilet['paper_help_active'] == true,
           reportCount: PlaceInfo.reportCount(toilet),
           likes: (toilet['likes'] as num?)?.toInt() ?? 0,
@@ -1739,6 +1823,7 @@ class _HomePageState extends State<HomePage> {
           isSubmittingHelp: isSubmittingHelp,
           isFavorite: _isFavorite(toilet),
           onFavorite: () => _toggleFavorite(toilet),
+          onShare: () => unawaited(_copyPlaceLink(toilet)),
           onVote: (isCurrent) async {
             Navigator.of(context).pop();
             await submitVote(toilet, isCurrent: isCurrent);
@@ -2461,6 +2546,7 @@ class _HomePageState extends State<HomePage> {
                     const SizedBox(height: 12),
                     _MapDiscoveryControl(
                       onSearch: showPlaceSearch,
+                      onQuickNeeds: isOpeningQuickNeeds ? null : showQuickNeeds,
                       onFavorites: showFavorites,
                       favoritesCount: _favoritePlaceKeys.length,
                     ),
@@ -3859,11 +3945,13 @@ class _UserLocationMarker extends StatelessWidget {
 class _MapDiscoveryControl extends StatelessWidget {
   const _MapDiscoveryControl({
     required this.onSearch,
+    required this.onQuickNeeds,
     required this.onFavorites,
     required this.favoritesCount,
   });
 
   final VoidCallback onSearch;
+  final VoidCallback? onQuickNeeds;
   final VoidCallback onFavorites;
   final int favoritesCount;
 
@@ -3884,6 +3972,13 @@ class _MapDiscoveryControl extends StatelessWidget {
             tooltip: 'Поиск места',
             onPressed: onSearch,
             foregroundColor: AppPalette.aqua,
+          ),
+          Container(width: 27, height: 1, color: scheme.outlineVariant),
+          _ZoomButton(
+            icon: Icons.bolt_rounded,
+            tooltip: 'Нужно сейчас: туалет, вода или зарядка',
+            onPressed: onQuickNeeds,
+            foregroundColor: const Color(0xFFF59E0B),
           ),
           Container(width: 27, height: 1, color: scheme.outlineVariant),
           _ZoomButton(
@@ -4246,6 +4341,262 @@ class _RoutePanel extends StatelessWidget {
   }
 }
 
+class _QuickNeedsSheet extends StatelessWidget {
+  const _QuickNeedsSheet({
+    required this.results,
+    required this.distanceLabel,
+    required this.onSelected,
+  });
+
+  final List<QuickNeedResult> results;
+  final String Function(double distanceMeters) distanceLabel;
+  final ValueChanged<Map<String, dynamic>> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(18, 10, 18, 22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.24),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFBBF24), Color(0xFFF97316)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.bolt_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Нужно сейчас',
+                        style: TextStyle(
+                          color: scheme.onSurface,
+                          fontSize: 21,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Самые близкие полезные места',
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            if (results.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'Рядом пока нет подтверждённых мест. Можно приблизить карту или добавить новую точку.',
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
+                ),
+              )
+            else
+              ...results.map(
+                (result) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _QuickNeedCard(
+                    result: result,
+                    distance: distanceLabel(result.distanceMeters),
+                    onTap: () => onSelected(result.place),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 4),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.verified_user_outlined,
+                  size: 18,
+                  color: scheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Показываем опубликованные точки. Для воды — только места, отмеченные как питьевые.',
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickNeedCard extends StatelessWidget {
+  const _QuickNeedCard({
+    required this.result,
+    required this.distance,
+    required this.onTap,
+  });
+
+  final QuickNeedResult result;
+  final String distance;
+  final VoidCallback onTap;
+
+  Color get _color => switch (result.kind) {
+    QuickNeedKind.toilet => const Color(0xFF16A34A),
+    QuickNeedKind.drinkingWater => const Color(0xFF0284C7),
+    QuickNeedKind.phoneCharging => const Color(0xFF4F46E5),
+  };
+
+  IconData get _icon => switch (result.kind) {
+    QuickNeedKind.toilet => Icons.wc_rounded,
+    QuickNeedKind.drinkingWater => Icons.water_drop_rounded,
+    QuickNeedKind.phoneCharging => Icons.battery_charging_full_rounded,
+  };
+
+  String get _title => switch (result.kind) {
+    QuickNeedKind.toilet => 'Ближайший туалет',
+    QuickNeedKind.drinkingWater => 'Питьевая вода',
+    QuickNeedKind.phoneCharging => 'Зарядить телефон',
+  };
+
+  String get _detail => switch (result.kind) {
+    QuickNeedKind.toilet =>
+      PlaceInfo.feeKnown(result.place)
+          ? (PlaceInfo.feeStatus(result.place) == true ? 'Бесплатно' : 'Платно')
+          : 'Стоимость уточняется',
+    QuickNeedKind.drinkingWater => PlaceInfo.waterTypeLabel(result.place),
+    QuickNeedKind.phoneCharging => PlaceInfo.accessLabel(result.place),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final freshness = PlaceFreshnessResolver.resolve(result.place);
+
+    return Material(
+      color: Color.alphaBlend(_color.withValues(alpha: 0.08), scheme.surface),
+      borderRadius: BorderRadius.circular(22),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: _color,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _color.withValues(alpha: 0.24),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Icon(_icon, color: Colors.white, size: 26),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _title,
+                      style: TextStyle(
+                        color: _color,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      PlaceInfo.titleOf(result.place),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$_detail · $distance · ${freshness.label}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right_rounded, color: _color, size: 27),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // =============================================================
 // CARD / BOTTOM SHEET ТУАЛЕТА
 // =============================================================
@@ -4500,6 +4851,7 @@ class _ToiletInfoSheet extends StatelessWidget {
   final bool? drinkingWater;
   final bool? waterRefill;
   final String waterTypeLabel;
+  final PlaceFreshness freshness;
   final bool hasActivePaperHelp;
   final int reportCount;
   final int likes;
@@ -4511,6 +4863,7 @@ class _ToiletInfoSheet extends StatelessWidget {
   final bool isSubmittingHelp;
   final bool isFavorite;
   final Future<bool> Function() onFavorite;
+  final VoidCallback onShare;
   final ValueChanged<bool> onVote;
   final VoidCallback onReport;
   final VoidCallback onMove;
@@ -4539,6 +4892,7 @@ class _ToiletInfoSheet extends StatelessWidget {
     required this.drinkingWater,
     required this.waterRefill,
     required this.waterTypeLabel,
+    required this.freshness,
     required this.hasActivePaperHelp,
     required this.reportCount,
     required this.likes,
@@ -4550,6 +4904,7 @@ class _ToiletInfoSheet extends StatelessWidget {
     required this.isSubmittingHelp,
     required this.isFavorite,
     required this.onFavorite,
+    required this.onShare,
     required this.onVote,
     required this.onReport,
     required this.onMove,
@@ -4614,6 +4969,20 @@ class _ToiletInfoSheet extends StatelessWidget {
 
     return Colors.blueGrey.shade600;
   }
+
+  Color get freshnessColor => switch (freshness.level) {
+    PlaceFreshnessLevel.recent => const Color(0xFF16A34A),
+    PlaceFreshnessLevel.aging => const Color(0xFFD97706),
+    PlaceFreshnessLevel.stale => const Color(0xFFDC2626),
+    PlaceFreshnessLevel.unknown => Colors.blueGrey.shade600,
+  };
+
+  IconData get freshnessIcon => switch (freshness.level) {
+    PlaceFreshnessLevel.recent => Icons.verified_rounded,
+    PlaceFreshnessLevel.aging => Icons.schedule_rounded,
+    PlaceFreshnessLevel.stale => Icons.update_disabled_rounded,
+    PlaceFreshnessLevel.unknown => Icons.help_outline_rounded,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -4691,6 +5060,12 @@ class _ToiletInfoSheet extends StatelessWidget {
                     _FavoriteButton(
                       initialValue: isFavorite,
                       onToggle: onFavorite,
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton.filledTonal(
+                      tooltip: 'Скопировать ссылку на место',
+                      onPressed: onShare,
+                      icon: const Icon(Icons.ios_share_rounded),
                     ),
                     const SizedBox(width: 4),
                     IconButton(
@@ -4911,6 +5286,15 @@ class _ToiletInfoSheet extends StatelessWidget {
                   iconColor: const Color(0xFF2563EB),
                   title: 'Расстояние по прямой',
                   value: distance,
+                ),
+
+                const SizedBox(height: 10),
+
+                _InfoCard(
+                  icon: freshnessIcon,
+                  iconColor: freshnessColor,
+                  title: freshness.label,
+                  value: freshness.detail,
                 ),
 
                 const SizedBox(height: 18),
