@@ -21,6 +21,15 @@ const ACCESS_TYPES = new Set([
   'destination',
   'unknown',
 ]);
+const PEDESTRIAN_ALERT_TYPES = new Set([
+  'open',
+  'closed',
+  'ice',
+  'construction',
+  'snow',
+  'flooding',
+  'obstacle',
+]);
 const BLOCKED_FRAGMENTS = [
   'nigger',
   'nigga',
@@ -146,6 +155,16 @@ async function route(request, env) {
     ).all();
     return json(request, env, { requests: result.results });
   }
+  if (method === 'GET' && url.pathname === '/api/pedestrian-alerts') {
+    const result = await env.DB.prepare(
+      `SELECT id, lat, lng, alert_type, username, description,
+         created_at, expires_at
+       FROM pedestrian_alerts
+       WHERE datetime(expires_at) > datetime('now')
+       ORDER BY created_at DESC LIMIT 500`,
+    ).all();
+    return json(request, env, { alerts: normalizeRows(result.results) });
+  }
   if (method === 'POST' && url.pathname === '/api/submissions') {
     return submitPlace(request, env);
   }
@@ -160,6 +179,9 @@ async function route(request, env) {
   }
   if (method === 'POST' && url.pathname === '/api/help-requests') {
     return requestPaperHelp(request, env);
+  }
+  if (method === 'POST' && url.pathname === '/api/pedestrian-alerts') {
+    return reportPedestrianAlert(request, env);
   }
 
   const communityReviewMatch = url.pathname.match(
@@ -417,6 +439,81 @@ async function requestPaperHelp(request, env) {
        expires_at = excluded.expires_at`,
   ).bind(placeKey, lat, lng, requesterKey, expiresAt).run();
   return json(request, env, { expiresAt }, 201);
+}
+
+async function reportPedestrianAlert(request, env) {
+  const body = await readJson(request);
+  const lat = boundedNumber(body.lat, 'Широта', 40.45, 55.55);
+  const lng = boundedNumber(body.lng, 'Долгота', 46.45, 87.4);
+  const alertType = requiredText(body.alertType, 'Состояние дороги', 2, 20);
+  if (!PEDESTRIAN_ALERT_TYPES.has(alertType)) {
+    throw new HttpError(400, 'Неизвестное состояние дороги');
+  }
+  const username = safeUserText(body.username, 'Имя', 2, 30);
+  const reporterKey = requiredText(
+    body.reporterKey,
+    'Ключ устройства',
+    12,
+    80,
+  );
+  const description = optionalSafeText(body.description, 'Комментарий', 240);
+  await enforceRateLimit(request, env, 'pedestrian-alert', 6, 3600);
+
+  const durations = {
+    open: 6 * 60 * 60 * 1000,
+    construction: 3 * 24 * 60 * 60 * 1000,
+    closed: 24 * 60 * 60 * 1000,
+  };
+  const expiresAt = new Date(
+    Date.now() + (durations[alertType] || 12 * 60 * 60 * 1000),
+  ).toISOString();
+
+  if (alertType === 'open') {
+    await env.DB.prepare(
+      `UPDATE pedestrian_alerts SET expires_at = CURRENT_TIMESTAMP
+       WHERE alert_type <> 'open' AND datetime(expires_at) > datetime('now')
+         AND abs(lat - ?) <= 0.00065 AND abs(lng - ?) <= 0.0009`,
+    ).bind(lat, lng).run();
+  }
+
+  const existing = await env.DB.prepare(
+    `SELECT id FROM pedestrian_alerts
+     WHERE reporter_key = ? AND alert_type = ?
+       AND datetime(expires_at) > datetime('now')
+       AND abs(lat - ?) <= 0.00065 AND abs(lng - ?) <= 0.0009
+     ORDER BY created_at DESC LIMIT 1`,
+  ).bind(reporterKey, alertType, lat, lng).first();
+
+  if (existing) {
+    await env.DB.prepare(
+      `UPDATE pedestrian_alerts SET lat = ?, lng = ?, username = ?,
+         description = ?, created_at = CURRENT_TIMESTAMP, expires_at = ?
+       WHERE id = ?`,
+    ).bind(
+      lat,
+      lng,
+      username,
+      description,
+      expiresAt,
+      existing.id,
+    ).run();
+    return json(request, env, { id: existing.id }, 200);
+  }
+
+  const result = await env.DB.prepare(
+    `INSERT INTO pedestrian_alerts
+       (lat, lng, alert_type, username, description, reporter_key, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+  ).bind(
+    lat,
+    lng,
+    alertType,
+    username,
+    description,
+    reporterKey,
+    expiresAt,
+  ).first();
+  return json(request, env, { id: result.id }, 201);
 }
 
 function duplicateSubmissionDismissal(env, submission) {

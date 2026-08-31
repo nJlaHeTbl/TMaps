@@ -18,11 +18,13 @@ import 'core/map_base_style.dart';
 import 'core/map_display_policy.dart';
 import 'core/map_marker_clustering.dart';
 import 'core/map_tile_policy.dart';
+import 'core/pedestrian_alert.dart';
 import 'core/place_freshness.dart';
 import 'core/place_info.dart';
 import 'core/quick_need_finder.dart';
 import 'core/place_submission_defaults.dart';
 import 'core/place_visibility_policy.dart';
+import 'core/weather_snapshot.dart';
 import 'data/http_community_backend.dart';
 import 'data/supabase_community_backend.dart';
 import 'data/toilet_repository.dart';
@@ -34,6 +36,7 @@ import 'services/place_share_service.dart';
 import 'services/route_service.dart';
 import 'services/submission_history_service.dart';
 import 'services/theme_preference_service.dart';
+import 'services/weather_service.dart';
 import 'widgets/map_overlays.dart';
 import 'widgets/location_help_sheet.dart';
 import 'widgets/place_search_sheet.dart';
@@ -135,10 +138,12 @@ class _HomePageState extends State<HomePage> {
   final SubmissionHistoryService _submissionHistoryService =
       const SubmissionHistoryService();
   final LiveLocationService _locationService = LiveLocationService();
+  final WeatherService _weatherService = WeatherService();
 
   late final ToiletRepository _toiletRepository;
   StreamSubscription<Position>? _locationSubscription;
   Timer? _cameraUpdateTimer;
+  Timer? _weatherUpdateTimer;
 
   LatLng currentPosition = const LatLng(45.0156, 78.3731);
   LatLng _pickedPosition = const LatLng(45.0156, 78.3731);
@@ -149,10 +154,16 @@ class _HomePageState extends State<HomePage> {
   double _locationHeading = 0;
   bool _followUser = false;
   bool _isPickingLocation = false;
+  bool _isPickingPedestrianAlert = false;
   Map<String, dynamic>? _locationCorrectionPlace;
   MapBaseStyle _mapBaseStyle = MapBaseStyle.streets;
 
   final List<Map<String, dynamic>> toilets = [];
+  List<PedestrianAlert> _pedestrianAlerts = const [];
+  List<PedestrianAlert> _routePedestrianAlerts = const [];
+  WeatherSnapshot? _weather;
+  bool _isLoadingWeather = false;
+  bool _weatherLoadFailed = false;
   List<TrackedSubmission> _submissionHistory = const [];
   Set<String> _favoritePlaceKeys = const {};
 
@@ -166,6 +177,7 @@ class _HomePageState extends State<HomePage> {
   bool isSubmittingLocationCorrection = false;
   bool isSubmittingVote = false;
   bool isSubmittingHelp = false;
+  bool isSubmittingPedestrianAlert = false;
   bool showFreeOnly = false;
   bool showWheelchairOnly = false;
   bool showCommunityOnly = false;
@@ -174,6 +186,7 @@ class _HomePageState extends State<HomePage> {
   bool showEvCharging = true;
   bool showAllCategories = false;
   bool showToiletPlaces = true;
+  bool showPedestrianAlerts = true;
   bool _sharedPlaceHandled = false;
   Set<PlaceKind> selectedCategories = <PlaceKind>{};
   int _mapAnimationGeneration = 0;
@@ -272,6 +285,15 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  List<PedestrianAlert> get displayedPedestrianAlerts {
+    if (!showPedestrianAlerts || _mapZoom < 12.8) return const [];
+    final bounds = _visibleMapBounds;
+    return _pedestrianAlerts
+        .where((alert) => bounds == null || bounds.contains(alert.position))
+        .take(80)
+        .toList(growable: false);
+  }
+
   bool get showZoomHint =>
       !MapDisplayPolicy.canShowPlaces(_mapZoom) && !_isPickingLocation;
 
@@ -345,13 +367,16 @@ class _HomePageState extends State<HomePage> {
     unawaited(_loadFavorites());
     unawaited(_startLocation(requestPermission: false));
     unawaited(_loadInitialCommunityData());
+    unawaited(_loadWeatherFor(currentPosition));
   }
 
   @override
   void dispose() {
     _cameraUpdateTimer?.cancel();
+    _weatherUpdateTimer?.cancel();
     unawaited(_locationSubscription?.cancel());
     unawaited(_locationService.dispose());
+    _weatherService.dispose();
     super.dispose();
   }
 
@@ -628,6 +653,63 @@ class _HomePageState extends State<HomePage> {
     if (center || _followUser) {
       _mapController.move(point, max(_mapZoom, 16));
     }
+    if (center || _followUser || _weather == null) {
+      _scheduleWeather(point);
+    }
+  }
+
+  void _scheduleWeather(LatLng position) {
+    _weatherUpdateTimer?.cancel();
+    _weatherUpdateTimer = Timer(
+      const Duration(milliseconds: 850),
+      () => unawaited(_loadWeatherFor(position)),
+    );
+  }
+
+  Future<void> _loadWeatherFor(LatLng position, {bool force = false}) async {
+    final existing = _weather;
+    if (!force && existing != null) {
+      const distance = Distance();
+      final isNearby = distance(existing.position, position) < 15000;
+      final isFresh =
+          DateTime.now().difference(existing.updatedAt) <
+          const Duration(minutes: 15);
+      if (isNearby && isFresh) return;
+    }
+    if (_isLoadingWeather) return;
+
+    if (mounted) {
+      setState(() {
+        _isLoadingWeather = true;
+        _weatherLoadFailed = false;
+      });
+    }
+    try {
+      final weather = await _weatherService.fetch(position);
+      if (!mounted) return;
+      setState(() => _weather = weather);
+    } catch (_) {
+      // Карта должна работать, даже если погодный сервис временно не отвечает.
+      if (mounted) setState(() => _weatherLoadFailed = true);
+    } finally {
+      if (mounted) setState(() => _isLoadingWeather = false);
+    }
+  }
+
+  Future<void> _showWeatherDetails() async {
+    final weather = _weather;
+    if (weather == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _WeatherDetailsSheet(
+        weather: weather,
+        isRefreshing: _isLoadingWeather,
+        onRefresh: () =>
+            _loadWeatherFor(_mapController.camera.center, force: true),
+      ),
+    );
   }
 
   Future<void> centerOnUser() async {
@@ -1288,7 +1370,9 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> loadToilets() async {
     try {
+      final alertsFuture = _loadPedestrianAlertsSafely();
       final loadedToilets = await _toiletRepository.fetchAll();
+      final loadedAlerts = await alertsFuture;
       await _submissionHistoryService.reconcilePublishedPlaces(loadedToilets);
       final visibleSubmissionHistory = await _submissionHistoryService
           .refreshLifecycle();
@@ -1300,11 +1384,25 @@ class _HomePageState extends State<HomePage> {
         toilets
           ..clear()
           ..addAll(loadedToilets);
+        _pedestrianAlerts = loadedAlerts;
+        _routePedestrianAlerts = PedestrianAlertPolicy.nearRoute(
+          loadedAlerts,
+          routePoints,
+        );
       });
 
       debugPrint('Загружено туалетов: ${toilets.length}');
     } catch (e) {
       debugPrint('Ошибка загрузки туалетов: $e');
+    }
+  }
+
+  Future<List<PedestrianAlert>> _loadPedestrianAlertsSafely() async {
+    try {
+      return await _toiletRepository.fetchPedestrianAlerts();
+    } on Object catch (error) {
+      debugPrint('Предупреждения пешеходов пока недоступны: $error');
+      return const [];
     }
   }
 
@@ -1351,6 +1449,11 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    if (mode == AddLocationMode.roadAlert) {
+      await _startPedestrianAlertFlow();
+      return;
+    }
+
     if (!await _ensureValidUsername()) return;
 
     if (mode == AddLocationMode.current) {
@@ -1380,6 +1483,7 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _followUser = false;
       _isPickingLocation = true;
+      _isPickingPedestrianAlert = false;
       _locationCorrectionPlace = null;
       _pickedPosition = target;
     });
@@ -1391,6 +1495,7 @@ class _HomePageState extends State<HomePage> {
   void _cancelLocationPicker() {
     setState(() {
       _isPickingLocation = false;
+      _isPickingPedestrianAlert = false;
       _locationCorrectionPlace = null;
     });
   }
@@ -1399,6 +1504,14 @@ class _HomePageState extends State<HomePage> {
     if (!await _ensureValidUsername()) return;
 
     final position = _pickedPosition;
+    if (_isPickingPedestrianAlert) {
+      setState(() {
+        _isPickingLocation = false;
+        _isPickingPedestrianAlert = false;
+      });
+      await _showPedestrianAlertForm(position);
+      return;
+    }
     final correctionPlace = _locationCorrectionPlace;
     if (correctionPlace != null) {
       await _submitLocationCorrection(correctionPlace, position);
@@ -1409,6 +1522,107 @@ class _HomePageState extends State<HomePage> {
       isAddingToilet = true;
     });
     await _showAddPlaceForm(position);
+  }
+
+  Future<void> _startPedestrianAlertFlow() async {
+    if (isSubmittingPedestrianAlert || !await _ensureValidUsername()) return;
+    if (!mounted) return;
+
+    final locationMode =
+        await showModalBottomSheet<PedestrianAlertLocationMode>(
+          context: context,
+          showDragHandle: true,
+          builder: (_) => const PedestrianAlertLocationSheet(),
+        );
+    if (!mounted || locationMode == null) return;
+
+    if (locationMode == PedestrianAlertLocationMode.current) {
+      final locationFound = await _startLocation(
+        requestPermission: true,
+        center: true,
+      );
+      if (!mounted) return;
+      if (!locationFound) {
+        await _presentLocationHelp();
+        return;
+      }
+      await _showPedestrianAlertForm(currentPosition);
+      return;
+    }
+
+    final camera = _mapController.camera;
+    setState(() {
+      _followUser = false;
+      _isPickingLocation = true;
+      _isPickingPedestrianAlert = true;
+      _locationCorrectionPlace = null;
+      _pickedPosition = camera.center;
+    });
+  }
+
+  Future<void> _showPedestrianAlertForm(LatLng position) async {
+    final draft = await showModalBottomSheet<PedestrianAlertDraft>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _PedestrianAlertFormSheet(position: position),
+    );
+    if (draft == null || !mounted) return;
+    await _submitPedestrianAlert(position, draft);
+  }
+
+  Future<void> _submitPedestrianAlert(
+    LatLng position,
+    PedestrianAlertDraft draft,
+  ) async {
+    setState(() => isSubmittingPedestrianAlert = true);
+    try {
+      await _toiletRepository.submitPedestrianAlert(
+        position: position,
+        draft: draft,
+        username: username!,
+        reporterKey: await _deviceVoterKey(),
+      );
+      final alerts = await _loadPedestrianAlertsSafely();
+      if (!mounted) return;
+      setState(() {
+        _pedestrianAlerts = alerts;
+        _routePedestrianAlerts = PedestrianAlertPolicy.nearRoute(
+          alerts,
+          routePoints,
+        );
+        showPedestrianAlerts = true;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            draft.type == PedestrianAlertType.open
+                ? 'Спасибо! Участок отмечен как открытый'
+                : 'Предупреждение опубликовано и исчезнет автоматически',
+          ),
+        ),
+      );
+    } on Object catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red.shade700,
+          content: Text('Не удалось отправить предупреждение: $error'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => isSubmittingPedestrianAlert = false);
+    }
+  }
+
+  Future<void> _showPedestrianAlertInfo(PedestrianAlert alert) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => _PedestrianAlertInfoSheet(alert: alert),
+    );
   }
 
   Future<void> _beginLocationCorrection(Map<String, dynamic> place) async {
@@ -1425,6 +1639,7 @@ class _HomePageState extends State<HomePage> {
       _locationCorrectionPlace = Map<String, dynamic>.from(place);
       _pickedPosition = target;
       _isPickingLocation = true;
+      _isPickingPedestrianAlert = false;
     });
     _mapController.move(target, max(camera.zoom, 17.2));
   }
@@ -2146,6 +2361,7 @@ class _HomePageState extends State<HomePage> {
         routePoints = [];
         routeDistance = null;
         routeDuration = null;
+        _routePedestrianAlerts = const [];
       });
 
       final locationFound = await _startLocation(requestPermission: true);
@@ -2166,6 +2382,10 @@ class _HomePageState extends State<HomePage> {
         routePoints = result.points;
         routeDistance = result.distance;
         routeDuration = result.duration;
+        _routePedestrianAlerts = PedestrianAlertPolicy.nearRoute(
+          _pedestrianAlerts,
+          result.points,
+        );
         isBuildingRoute = false;
       });
 
@@ -2255,6 +2475,7 @@ class _HomePageState extends State<HomePage> {
       routePoints = [];
       routeDistance = null;
       routeDuration = null;
+      _routePedestrianAlerts = const [];
     });
   }
 
@@ -2266,6 +2487,7 @@ class _HomePageState extends State<HomePage> {
       _visibleMapBounds = camera.visibleBounds;
       if (_isPickingLocation) _pickedPosition = camera.center;
     });
+    _scheduleWeather(camera.center);
   }
 
   void _changeMapZoom(double delta) {
@@ -2288,6 +2510,7 @@ class _HomePageState extends State<HomePage> {
     if (hasGesture && _followUser) {
       _followUser = false;
     }
+    if (hasGesture) _scheduleWeather(camera.center);
 
     if (_isPickingLocation) {
       setState(() {
@@ -2392,6 +2615,29 @@ class _HomePageState extends State<HomePage> {
                 ),
 
               // =================================================
+              // ПЕШЕХОДНАЯ ОБСТАНОВКА
+              // =================================================
+              if (!_isPickingLocation && displayedPedestrianAlerts.isNotEmpty)
+                MarkerLayer(
+                  markers: displayedPedestrianAlerts
+                      .map(
+                        (alert) => Marker(
+                          key: ValueKey('pedestrian-alert:${alert.id}'),
+                          point: alert.position,
+                          width: 52,
+                          height: 58,
+                          child: _AppearingPlaceMarker(
+                            child: _PedestrianAlertMarker(
+                              alert: alert,
+                              onTap: () => _showPedestrianAlertInfo(alert),
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+
+              // =================================================
               // ТУАЛЕТЫ
               // =================================================
               if (!_isPickingLocation)
@@ -2480,6 +2726,13 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
 
+          if (!_isPickingLocation &&
+              _weather != null &&
+              (_weather!.isRainy || _weather!.isSnowy))
+            Positioned.fill(
+              child: _WeatherMapAmbience(weather: _weather!, isDark: isDark),
+            ),
+
           // ===================================================
           // ВЕРХНЯЯ ПАНЕЛЬ
           // ===================================================
@@ -2503,6 +2756,39 @@ class _HomePageState extends State<HomePage> {
             ),
 
           // ===================================================
+          // ПОГОДА В ТЕКУЩЕМ ГОРОДЕ
+          // ===================================================
+          if (!_isPickingLocation && (_weather != null || _weatherLoadFailed))
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 90,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 146, 0, 0),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _weather == null
+                        ? _WeatherRetryChip(
+                            isRefreshing: _isLoadingWeather,
+                            onTap: () => unawaited(
+                              _loadWeatherFor(
+                                _mapController.camera.center,
+                                force: true,
+                              ),
+                            ),
+                          )
+                        : _WeatherChip(
+                            weather: _weather!,
+                            isRefreshing: _isLoadingWeather,
+                            onTap: _showWeatherDetails,
+                          ),
+                  ),
+                ),
+              ),
+            ),
+
+          // ===================================================
           // ЛЕГЕНДА КАТЕГОРИЙ
           // ===================================================
           if (!_isPickingLocation)
@@ -2516,10 +2802,15 @@ class _HomePageState extends State<HomePage> {
                   child: _MapLegendBar(
                     showAll: showAllCategories,
                     showToilets: showToiletPlaces,
+                    showPedestrianAlerts: showPedestrianAlerts,
+                    pedestrianAlertCount: _pedestrianAlerts.length,
                     selectedKinds: selectedCategories,
                     onShowAll: _showAllMapCategories,
                     onToggleToilets: _toggleToiletCategory,
                     onToggleKind: _toggleMapCategory,
+                    onTogglePedestrianAlerts: () => setState(
+                      () => showPedestrianAlerts = !showPedestrianAlerts,
+                    ),
                   ),
                 ),
               ),
@@ -2678,6 +2969,7 @@ class _HomePageState extends State<HomePage> {
                 child: _RoutePanel(
                   distance: formatDistance(routeDistance!),
                   duration: formatDuration(routeDuration!),
+                  alerts: _routePedestrianAlerts,
                   onClose: clearRoute,
                 ),
               ),
@@ -2725,13 +3017,19 @@ class _HomePageState extends State<HomePage> {
               position: _pickedPosition,
               onCancel: _cancelLocationPicker,
               onConfirm: _confirmPickedLocation,
-              title: _locationCorrectionPlace == null
+              title: _isPickingPedestrianAlert
+                  ? 'Проблема на дороге'
+                  : _locationCorrectionPlace == null
                   ? 'Новая точка'
                   : 'Новое положение точки',
-              confirmLabel: _locationCorrectionPlace == null
+              confirmLabel: _isPickingPedestrianAlert
+                  ? 'Отметить этот участок'
+                  : _locationCorrectionPlace == null
                   ? 'Выбрать эту точку'
                   : 'Отправить на проверку',
-              pinIcon: _locationCorrectionPlace == null
+              pinIcon: _isPickingPedestrianAlert
+                  ? Icons.edit_road_rounded
+                  : _locationCorrectionPlace == null
                   ? Icons.add_location_alt_rounded
                   : Icons.edit_location_alt_rounded,
             ),
@@ -3321,18 +3619,24 @@ class _ThemeMenuItem extends StatelessWidget {
 class _MapLegendBar extends StatefulWidget {
   final bool showAll;
   final bool showToilets;
+  final bool showPedestrianAlerts;
+  final int pedestrianAlertCount;
   final Set<PlaceKind> selectedKinds;
   final VoidCallback onShowAll;
   final VoidCallback onToggleToilets;
   final ValueChanged<PlaceKind> onToggleKind;
+  final VoidCallback onTogglePedestrianAlerts;
 
   const _MapLegendBar({
     required this.showAll,
     required this.showToilets,
+    required this.showPedestrianAlerts,
+    required this.pedestrianAlertCount,
     required this.selectedKinds,
     required this.onShowAll,
     required this.onToggleToilets,
     required this.onToggleKind,
+    required this.onTogglePedestrianAlerts,
   });
 
   @override
@@ -3436,6 +3740,15 @@ class _MapLegendBarState extends State<_MapLegendBar> {
                             widget.selectedKinds.contains(kind),
                         onTap: () => widget.onToggleKind(kind),
                       ),
+                    ),
+                    _LegendItem(
+                      color: const Color(0xFFF97316),
+                      icon: Icons.edit_road_rounded,
+                      label: widget.pedestrianAlertCount > 0
+                          ? 'Дороги · ${widget.pedestrianAlertCount}'
+                          : 'Дороги',
+                      selected: widget.showPedestrianAlerts,
+                      onTap: widget.onTogglePedestrianAlerts,
                     ),
                   ],
                 ),
@@ -4267,14 +4580,789 @@ class _MapCounter extends StatelessWidget {
 // ПАНЕЛЬ МАРШРУТА
 // =============================================================
 
+class _WeatherMapAmbience extends StatefulWidget {
+  const _WeatherMapAmbience({required this.weather, required this.isDark});
+
+  final WeatherSnapshot weather;
+  final bool isDark;
+
+  @override
+  State<_WeatherMapAmbience> createState() => _WeatherMapAmbienceState();
+}
+
+class _WeatherMapAmbienceState extends State<_WeatherMapAmbience>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: widget.weather.isSnowy ? 5200 : 1700),
+    )..repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant _WeatherMapAmbience oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.weather.isSnowy != widget.weather.isSnowy) {
+      _controller.duration = Duration(
+        milliseconds: widget.weather.isSnowy ? 5200 : 1700,
+      );
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tint = widget.weather.isSnowy
+        ? const Color(0xFFDCEEFF)
+        : const Color(0xFF4DA8D8);
+    return IgnorePointer(
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) => Stack(
+            fit: StackFit.expand,
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      tint.withValues(alpha: widget.isDark ? 0.10 : 0.055),
+                      tint.withValues(alpha: widget.isDark ? 0.045 : 0.025),
+                    ],
+                  ),
+                ),
+              ),
+              CustomPaint(
+                painter: widget.weather.isSnowy
+                    ? _SnowAmbiencePainter(
+                        progress: _controller.value,
+                        isDark: widget.isDark,
+                      )
+                    : _RainAmbiencePainter(
+                        progress: _controller.value,
+                        isDark: widget.isDark,
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RainAmbiencePainter extends CustomPainter {
+  const _RainAmbiencePainter({required this.progress, required this.isDark});
+
+  final double progress;
+  final bool isDark;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = (isDark ? const Color(0xFFBDEAFF) : const Color(0xFF1976A8))
+          .withValues(alpha: isDark ? 0.34 : 0.24)
+      ..strokeWidth = isDark ? 1.35 : 1.15
+      ..strokeCap = StrokeCap.round;
+
+    for (var index = 0; index < 64; index++) {
+      final xSeed = ((index * 47) % 101) / 101;
+      final ySeed = ((index * 71) % 97) / 97;
+      final speed = 0.78 + (index % 7) * 0.065;
+      final y = (ySeed + progress * speed) % 1.12 - 0.06;
+      final x = (xSeed + progress * 0.035 + sin(index * 1.7) * 0.012) % 1;
+      final start = Offset(x * size.width, y * size.height);
+      final length = 9.0 + (index % 6) * 1.35;
+      canvas.drawLine(start, start + Offset(-3.5, length), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RainAmbiencePainter oldDelegate) =>
+      oldDelegate.progress != progress || oldDelegate.isDark != isDark;
+}
+
+class _SnowAmbiencePainter extends CustomPainter {
+  const _SnowAmbiencePainter({required this.progress, required this.isDark});
+
+  final double progress;
+  final bool isDark;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = (isDark ? Colors.white : const Color(0xFFB6DDF7)).withValues(
+        alpha: isDark ? 0.56 : 0.48,
+      );
+
+    for (var index = 0; index < 46; index++) {
+      final xSeed = ((index * 43) % 103) / 103;
+      final ySeed = ((index * 67) % 101) / 101;
+      final speed = 0.22 + (index % 6) * 0.035;
+      final y = (ySeed + progress * speed) % 1.08 - 0.04;
+      final drift =
+          sin(progress * pi * 2 + index * 0.83) * (5.0 + (index % 4) * 1.5);
+      final center = Offset(xSeed * size.width + drift, y * size.height);
+      canvas.drawCircle(center, 1.35 + (index % 5) * 0.34, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SnowAmbiencePainter oldDelegate) =>
+      oldDelegate.progress != progress || oldDelegate.isDark != isDark;
+}
+
+class _WeatherRetryChip extends StatelessWidget {
+  const _WeatherRetryChip({required this.isRefreshing, required this.onTap});
+
+  final bool isRefreshing;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surface.withValues(alpha: 0.94),
+      elevation: 4,
+      shadowColor: Colors.black.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: isRefreshing ? null : onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isRefreshing)
+                const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2.2),
+                )
+              else
+                const Icon(Icons.cloud_off_rounded, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                isRefreshing ? 'Обновляю погоду…' : 'Погода · повторить',
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WeatherChip extends StatelessWidget {
+  const _WeatherChip({
+    required this.weather,
+    required this.isRefreshing,
+    required this.onTap,
+  });
+
+  final WeatherSnapshot weather;
+  final bool isRefreshing;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    return Material(
+      color: theme.colorScheme.surface.withValues(alpha: isDark ? 0.9 : 0.94),
+      elevation: 5,
+      shadowColor: Colors.black.withValues(alpha: 0.16),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: weather.color.withValues(alpha: isDark ? 0.24 : 0.13),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: isRefreshing
+                    ? Padding(
+                        padding: const EdgeInsets.all(9),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: weather.color,
+                        ),
+                      )
+                    : Icon(weather.icon, color: weather.color, size: 21),
+              ),
+              const SizedBox(width: 9),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${weather.temperature.round()}° · ${weather.condition}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    weather.cityName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WeatherDetailsSheet extends StatelessWidget {
+  const _WeatherDetailsSheet({
+    required this.weather,
+    required this.isRefreshing,
+    required this.onRefresh,
+  });
+
+  final WeatherSnapshot weather;
+  final bool isRefreshing;
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 22),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 34,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 18),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            Row(
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: weather.color.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Icon(weather.icon, color: weather.color, size: 32),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        weather.cityName,
+                        style: const TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      Text(
+                        '${weather.temperature.round()}° · ${weather.condition}',
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Обновить погоду',
+                  onPressed: isRefreshing ? null : onRefresh,
+                  icon: isRefreshing
+                      ? const SizedBox.square(
+                          dimension: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2.2),
+                        )
+                      : const Icon(Icons.refresh_rounded),
+                ),
+              ],
+            ),
+            if (weather.hasPedestrianWeatherWarning) ...[
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  color: weather.color.withValues(alpha: 0.11),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: weather.color.withValues(alpha: 0.22),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.directions_walk_rounded,
+                      color: weather.color,
+                      size: 21,
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        weather.pedestrianAdvice!,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          height: 1.3,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 18),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                _WeatherMetric(
+                  icon: Icons.thermostat_rounded,
+                  label: 'Ощущается',
+                  value: '${weather.apparentTemperature.round()}°',
+                ),
+                _WeatherMetric(
+                  icon: Icons.unfold_more_rounded,
+                  label: 'Мин / макс',
+                  value:
+                      '${weather.minimumTemperature.round()}° / ${weather.maximumTemperature.round()}°',
+                ),
+                _WeatherMetric(
+                  icon: Icons.water_drop_rounded,
+                  label: 'Вероятность осадков',
+                  value: '${weather.precipitationProbability}%',
+                ),
+                _WeatherMetric(
+                  icon: Icons.air_rounded,
+                  label: 'Ветер',
+                  value: '${weather.windSpeed.round()} км/ч',
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Погода по центру карты · данные Open-Meteo',
+              style: TextStyle(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WeatherMetric extends StatelessWidget {
+  const _WeatherMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: 158,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PedestrianAlertMarker extends StatelessWidget {
+  const _PedestrianAlertMarker({required this.alert, required this.onTap});
+
+  final PedestrianAlert alert;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: '${alert.type.label}: ${alert.type.description}',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Stack(
+          alignment: Alignment.topCenter,
+          children: [
+            Positioned(
+              top: 35,
+              child: Transform.rotate(
+                angle: 0.785,
+                child: Container(
+                  width: 15,
+                  height: 15,
+                  color: alert.type.color,
+                ),
+              ),
+            ),
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: alert.type.color,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 3),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x44000000),
+                    blurRadius: 10,
+                    offset: Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: Icon(alert.type.icon, color: Colors.white, size: 24),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PedestrianAlertFormSheet extends StatefulWidget {
+  const _PedestrianAlertFormSheet({required this.position});
+
+  final LatLng position;
+
+  @override
+  State<_PedestrianAlertFormSheet> createState() =>
+      _PedestrianAlertFormSheetState();
+}
+
+class _PedestrianAlertFormSheetState extends State<_PedestrianAlertFormSheet> {
+  final TextEditingController _descriptionController = TextEditingController();
+  PedestrianAlertType _selectedType = PedestrianAlertType.ice;
+
+  @override
+  void dispose() {
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(18, 4, 18, 20 + bottomInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Пешеходная обстановка',
+              style: TextStyle(
+                fontSize: 23,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              'Выбери, что происходит на этом участке. Данные временные и обновляются людьми рядом.',
+              style: TextStyle(color: scheme.onSurfaceVariant, height: 1.35),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: PedestrianAlertType.values
+                  .map(
+                    (type) => ChoiceChip(
+                      selected: _selectedType == type,
+                      selectedColor: type.color.withValues(alpha: 0.16),
+                      side: BorderSide(
+                        color: _selectedType == type
+                            ? type.color
+                            : scheme.outlineVariant,
+                      ),
+                      avatar: Icon(type.icon, size: 18, color: type.color),
+                      label: Text(type.label),
+                      onSelected: (_) => setState(() => _selectedType = type),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(13),
+              decoration: BoxDecoration(
+                color: Color.alphaBlend(
+                  _selectedType.color.withValues(alpha: 0.09),
+                  scheme.surface,
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  Icon(_selectedType.icon, color: _selectedType.color),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _selectedType.description,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _descriptionController,
+              maxLength: 240,
+              maxLines: 3,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Комментарий — необязательно',
+                hintText: 'Например: тропинка у моста полностью во льду',
+                prefixIcon: Icon(Icons.notes_rounded),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(
+                  Icons.pin_drop_outlined,
+                  size: 17,
+                  color: AppPalette.muted,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '${widget.position.latitude.toStringAsFixed(5)}, '
+                  '${widget.position.longitude.toStringAsFixed(5)}',
+                  style: const TextStyle(
+                    color: AppPalette.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: _selectedType.color,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                onPressed: () {
+                  final description = _descriptionController.text.trim();
+                  Navigator.of(context).pop(
+                    PedestrianAlertDraft(
+                      type: _selectedType,
+                      description: description.isEmpty ? null : description,
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.campaign_rounded),
+                label: const Text('Опубликовать предупреждение'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PedestrianAlertInfoSheet extends StatelessWidget {
+  const _PedestrianAlertInfoSheet({required this.alert});
+
+  final PedestrianAlert alert;
+
+  String _expiresLabel() {
+    final local = alert.expiresAt.toLocal();
+    final now = DateTime.now();
+    if (local.year == now.year &&
+        local.month == now.month &&
+        local.day == now.day) {
+      return 'до ${local.hour.toString().padLeft(2, '0')}:'
+          '${local.minute.toString().padLeft(2, '0')} сегодня';
+    }
+    return 'до ${local.day.toString().padLeft(2, '0')}.'
+        '${local.month.toString().padLeft(2, '0')} '
+        '${local.hour.toString().padLeft(2, '0')}:'
+        '${local.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: alert.type.color,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(alert.type.icon, color: Colors.white, size: 27),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        alert.type.label,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      Text(
+                        _expiresLabel(),
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              alert.description ?? alert.type.description,
+              style: const TextStyle(fontSize: 15, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Сообщил: ${alert.username}. Проверяй обстановку на месте — она может быстро измениться.',
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: 12.5,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _RoutePanel extends StatelessWidget {
   final String distance;
   final String duration;
+  final List<PedestrianAlert> alerts;
   final VoidCallback onClose;
 
   const _RoutePanel({
     required this.distance,
     required this.duration,
+    required this.alerts,
     required this.onClose,
   });
 
@@ -4286,54 +5374,96 @@ class _RoutePanel extends StatelessWidget {
       borderRadius: BorderRadius.circular(22),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF22C55E), Color(0xFF15803D)],
+            Row(
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF22C55E), Color(0xFF15803D)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.directions_rounded,
+                    color: Colors.white,
+                    size: 27,
+                  ),
                 ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(
-                Icons.directions_rounded,
-                color: Colors.white,
-                size: 27,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    distance,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                    ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        distance,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        duration,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    duration,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade600,
-                      fontWeight: FontWeight.w600,
-                    ),
+                ),
+                IconButton(
+                  onPressed: onClose,
+                  style: IconButton.styleFrom(
+                    backgroundColor: const Color(0xFFF3F4F6),
                   ),
-                ],
-              ),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
             ),
-            IconButton(
-              onPressed: onClose,
-              style: IconButton.styleFrom(
-                backgroundColor: const Color(0xFFF3F4F6),
+            if (alerts.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 11,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7ED),
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: const Color(0xFFFED7AA)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: Color(0xFFEA580C),
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        alerts.length == 1
+                            ? '${alerts.first.type.label} рядом с маршрутом'
+                            : '${alerts.length} предупреждения рядом с маршрутом',
+                        style: const TextStyle(
+                          color: Color(0xFF9A3412),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              icon: const Icon(Icons.close_rounded),
-            ),
+            ],
           ],
         ),
       ),

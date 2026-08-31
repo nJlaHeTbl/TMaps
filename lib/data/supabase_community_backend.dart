@@ -54,6 +54,14 @@ final class SupabaseCommunityBackend implements CommunityBackend {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> fetchPedestrianAlerts() async {
+    final response = await _client.rpc('get_active_pedestrian_alerts');
+    return (response as List<dynamic>)
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList(growable: false);
+  }
+
+  @override
   Future<int> submitPlace({
     required double latitude,
     required double longitude,
@@ -230,5 +238,28 @@ final class SupabaseCommunityBackend implements CommunityBackend {
       );
     }
     return expiresAt;
+  }
+
+  @override
+  Future<int> submitPedestrianAlert({
+    required double latitude,
+    required double longitude,
+    required String alertType,
+    required String username,
+    required String reporterKey,
+    String? description,
+  }) async {
+    final response = await _client.rpc(
+      'report_pedestrian_alert',
+      params: {
+        'p_lat': latitude,
+        'p_lng': longitude,
+        'p_alert_type': alertType,
+        'p_username': username,
+        'p_reporter_key': reporterKey,
+        'p_description': description,
+      },
+    );
+    return (response as num).toInt();
   }
 }

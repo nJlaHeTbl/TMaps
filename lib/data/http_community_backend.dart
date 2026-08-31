@@ -38,6 +38,10 @@ final class HttpCommunityBackend implements CommunityBackend {
       _getList('/api/help-requests', 'requests');
 
   @override
+  Future<List<Map<String, dynamic>>> fetchPedestrianAlerts() =>
+      _getList('/api/pedestrian-alerts', 'alerts');
+
+  @override
   Future<int> submitPlace({
     required double latitude,
     required double longitude,
@@ -179,6 +183,26 @@ final class HttpCommunityBackend implements CommunityBackend {
       );
     }
     return expiresAt;
+  }
+
+  @override
+  Future<int> submitPedestrianAlert({
+    required double latitude,
+    required double longitude,
+    required String alertType,
+    required String username,
+    required String reporterKey,
+    String? description,
+  }) async {
+    final payload = await _send('/api/pedestrian-alerts', {
+      'lat': latitude,
+      'lng': longitude,
+      'alertType': alertType,
+      'username': username,
+      'reporterKey': reporterKey,
+      'description': description,
+    });
+    return (payload['id'] as num).toInt();
   }
 
   Future<List<Map<String, dynamic>>> _getList(String path, String field) async {

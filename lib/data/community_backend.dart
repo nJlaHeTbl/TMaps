@@ -13,6 +13,8 @@ abstract interface class CommunityBackend {
 
   Future<List<Map<String, dynamic>>> fetchActiveHelpRequests();
 
+  Future<List<Map<String, dynamic>>> fetchPedestrianAlerts();
+
   Future<int> submitPlace({
     required double latitude,
     required double longitude,
@@ -75,6 +77,15 @@ abstract interface class CommunityBackend {
     required double latitude,
     required double longitude,
     required String requesterKey,
+  });
+
+  Future<int> submitPedestrianAlert({
+    required double latitude,
+    required double longitude,
+    required String alertType,
+    required String username,
+    required String reporterKey,
+    String? description,
   });
 }
 

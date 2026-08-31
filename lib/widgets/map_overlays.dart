@@ -3,7 +3,9 @@ import 'package:latlong2/latlong.dart';
 
 import '../core/app_palette.dart';
 
-enum AddLocationMode { current, chooseOnMap, submissions }
+enum AddLocationMode { current, chooseOnMap, roadAlert, submissions }
+
+enum PedestrianAlertLocationMode { current, chooseOnMap }
 
 class AddLocationChoiceSheet extends StatelessWidget {
   const AddLocationChoiceSheet({super.key, this.submissionCount = 0});
@@ -48,6 +50,16 @@ class AddLocationChoiceSheet extends StatelessWidget {
               gradient: AppPalette.warmGradient,
               onTap: () => Navigator.pop(context, AddLocationMode.chooseOnMap),
             ),
+            const SizedBox(height: 12),
+            _LocationChoice(
+              icon: Icons.construction_rounded,
+              title: 'Предупредить о дороге',
+              subtitle: 'Гололёд, ремонт, снег или закрытый проход',
+              gradient: const LinearGradient(
+                colors: [Color(0xFFF97316), Color(0xFFDC2626)],
+              ),
+              onTap: () => Navigator.pop(context, AddLocationMode.roadAlert),
+            ),
             if (submissionCount > 0) ...[
               const SizedBox(height: 12),
               _LocationChoice(
@@ -61,6 +73,58 @@ class AddLocationChoiceSheet extends StatelessWidget {
                     Navigator.pop(context, AddLocationMode.submissions),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class PedestrianAlertLocationSheet extends StatelessWidget {
+  const PedestrianAlertLocationSheet({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Где проблема?',
+              style: TextStyle(
+                fontSize: 25,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.7,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Отметь точку на тропинке или дороге. Предупреждение будет временным и исчезнет автоматически.',
+              style: TextStyle(color: AppPalette.muted, height: 1.35),
+            ),
+            const SizedBox(height: 18),
+            _LocationChoice(
+              icon: Icons.navigation_rounded,
+              title: 'Рядом со мной',
+              subtitle: 'Использовать текущее местоположение',
+              gradient: AppPalette.brandGradient,
+              onTap: () =>
+                  Navigator.pop(context, PedestrianAlertLocationMode.current),
+            ),
+            const SizedBox(height: 12),
+            _LocationChoice(
+              icon: Icons.edit_road_rounded,
+              title: 'Выбрать на карте',
+              subtitle: 'Можно сообщить об участке вдали от себя',
+              gradient: AppPalette.warmGradient,
+              onTap: () => Navigator.pop(
+                context,
+                PedestrianAlertLocationMode.chooseOnMap,
+              ),
+            ),
           ],
         ),
       ),

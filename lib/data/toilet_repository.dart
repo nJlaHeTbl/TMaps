@@ -1,9 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../core/content_guard.dart';
 import '../core/place_info.dart';
+import '../core/pedestrian_alert.dart';
 import 'community_backend.dart';
 
 class ToiletRepository {
@@ -356,6 +358,37 @@ class ToiletRepository {
       proposedLongitude: proposedLongitude,
       username: username,
       comment: comment,
+    );
+  }
+
+  Future<List<PedestrianAlert>> fetchPedestrianAlerts() async {
+    final response = await _backend.fetchPedestrianAlerts();
+    return PedestrianAlertPolicy.active(
+      response.map(PedestrianAlert.fromJson).whereType<PedestrianAlert>(),
+    );
+  }
+
+  Future<int> submitPedestrianAlert({
+    required LatLng position,
+    required PedestrianAlertDraft draft,
+    required String username,
+    required String reporterKey,
+  }) {
+    final usernameIssue = ContentGuard.validateUsername(username);
+    final descriptionIssue = ContentGuard.validateComment(draft.description);
+    if (usernameIssue != null) throw ArgumentError(usernameIssue);
+    if (descriptionIssue != null) throw ArgumentError(descriptionIssue);
+    if (reporterKey.length < 12 || reporterKey.length > 80) {
+      throw ArgumentError('Некорректный ключ устройства');
+    }
+
+    return _backend.submitPedestrianAlert(
+      latitude: position.latitude,
+      longitude: position.longitude,
+      alertType: draft.type.value,
+      username: username,
+      reporterKey: reporterKey,
+      description: draft.description,
     );
   }
 }

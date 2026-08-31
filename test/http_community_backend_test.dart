@@ -259,6 +259,51 @@ void main() {
     expect(requests.single['place_key'], 'osm:123');
   });
 
+  test('loads active pedestrian road alerts', () async {
+    final backend = HttpCommunityBackend(
+      baseUrl: 'https://api.tmaps.test',
+      client: MockClient((request) async {
+        expect(request.url.path, '/api/pedestrian-alerts');
+        return http.Response(
+          jsonEncode({
+            'alerts': [
+              {'id': 3, 'lat': 45.01, 'lng': 78.39, 'alert_type': 'ice'},
+            ],
+          }),
+          200,
+        );
+      }),
+    );
+
+    final alerts = await backend.fetchPedestrianAlerts();
+    expect(alerts.single['alert_type'], 'ice');
+  });
+
+  test('reports a pedestrian road condition', () async {
+    final backend = HttpCommunityBackend(
+      baseUrl: 'https://api.tmaps.test',
+      client: MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/api/pedestrian-alerts');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['alertType'], 'construction');
+        expect(body['description'], 'Тропинка перекрыта');
+        return http.Response(jsonEncode({'id': 14}), 201);
+      }),
+    );
+
+    final id = await backend.submitPedestrianAlert(
+      latitude: 45.01,
+      longitude: 78.39,
+      alertType: 'construction',
+      username: 'Мирас',
+      reporterKey: 'device-test-12345',
+      description: 'Тропинка перекрыта',
+    );
+
+    expect(id, 14);
+  });
+
   test('creates a temporary paper help signal', () async {
     final backend = HttpCommunityBackend(
       baseUrl: 'https://api.tmaps.test',
