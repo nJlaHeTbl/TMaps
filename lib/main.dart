@@ -738,7 +738,7 @@ class _HomePageState extends State<HomePage> {
     await _presentLocationHelp();
   }
 
-  Future<void> _presentLocationHelp() async {
+  Future<void> _presentLocationHelp({VoidCallback? onRetry}) async {
     if (!mounted) return;
 
     if (kIsWeb || _locationState == LocationAccessState.deniedForever) {
@@ -750,7 +750,7 @@ class _HomePageState extends State<HomePage> {
           isWeb: kIsWeb,
           permissionBlocked:
               _locationState == LocationAccessState.deniedForever,
-          onRetry: centerOnUser,
+          onRetry: onRetry ?? centerOnUser,
         ),
       );
       return;
@@ -873,7 +873,12 @@ class _HomePageState extends State<HomePage> {
 
       final locationFound = await _startLocation(requestPermission: true);
       if (!locationFound) {
-        throw Exception('Не удалось определить местоположение');
+        if (!mounted) return;
+        setState(() => isFindingNearest = false);
+        await _presentLocationHelp(
+          onRetry: () => unawaited(showNearestToilet()),
+        );
+        return;
       }
 
       Map<String, dynamic>? nearest;
@@ -2380,7 +2385,12 @@ class _HomePageState extends State<HomePage> {
 
       final locationFound = await _startLocation(requestPermission: true);
       if (!locationFound) {
-        throw Exception('Не удалось определить местоположение');
+        if (!mounted) return;
+        setState(() => isBuildingRoute = false);
+        await _presentLocationHelp(
+          onRetry: () => unawaited(buildRoute(toilet)),
+        );
+        return;
       }
 
       final double toiletLat = (toilet['lat'] as num).toDouble();
@@ -5455,7 +5465,7 @@ class _RoutePanel extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: const Icon(
-                    Icons.directions_rounded,
+                    Icons.directions_walk_rounded,
                     color: Colors.white,
                     size: 27,
                   ),
@@ -5474,7 +5484,7 @@ class _RoutePanel extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        duration,
+                        'Пешком · $duration',
                         style: TextStyle(
                           fontSize: 13,
                           color: Colors.grey.shade600,
