@@ -2899,7 +2899,6 @@ class _HomePageState extends State<HomePage> {
                       SizedBox(height: mapControlGap),
                     ],
                     _MapDiscoveryControl(
-                      compact: compactMapControls,
                       onSearch: showPlaceSearch,
                       onQuickNeeds: isOpeningQuickNeeds ? null : showQuickNeeds,
                       onFavorites: showFavorites,
@@ -4326,14 +4325,12 @@ class _UserLocationMarker extends StatelessWidget {
 
 class _MapDiscoveryControl extends StatelessWidget {
   const _MapDiscoveryControl({
-    required this.compact,
     required this.onSearch,
     required this.onQuickNeeds,
     required this.onFavorites,
     required this.favoritesCount,
   });
 
-  final bool compact;
   final VoidCallback onSearch;
   final VoidCallback? onQuickNeeds;
   final VoidCallback onFavorites;
@@ -4343,8 +4340,8 @@ class _MapDiscoveryControl extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     Widget divider() => Container(
-      width: compact ? 1 : 27,
-      height: compact ? 27 : 1,
+      width: 1,
+      height: 27,
       color: scheme.outlineVariant,
     );
     final buttons = <Widget>[
@@ -4380,9 +4377,7 @@ class _MapDiscoveryControl extends StatelessWidget {
       color: scheme.surface.withValues(alpha: 0.97),
       borderRadius: BorderRadius.circular(18),
       clipBehavior: Clip.antiAlias,
-      child: compact
-          ? Row(mainAxisSize: MainAxisSize.min, children: buttons)
-          : Column(mainAxisSize: MainAxisSize.min, children: buttons),
+      child: Row(mainAxisSize: MainAxisSize.min, children: buttons),
     );
   }
 }
