@@ -189,6 +189,10 @@ class _HomePageState extends State<HomePage> {
   bool showPedestrianAlerts = true;
   bool _sharedPlaceHandled = false;
   Set<PlaceKind> selectedCategories = <PlaceKind>{};
+
+  double get _activeMaxMapZoom => _mapBaseStyle == MapBaseStyle.satellite
+      ? MapTilePolicy.satelliteMaxDisplayZoom
+      : _maxMapZoom;
   int _mapAnimationGeneration = 0;
 
   List<LatLng> routePoints = [];
@@ -419,6 +423,16 @@ class _HomePageState extends State<HomePage> {
 
     final previousStyle = _mapBaseStyle;
     setState(() => _mapBaseStyle = style);
+
+    if (style == MapBaseStyle.satellite &&
+        _mapZoom > MapTilePolicy.satelliteMaxDisplayZoom) {
+      unawaited(
+        _animateMapTo(
+          _mapController.camera.center,
+          MapTilePolicy.satelliteMaxDisplayZoom,
+        ),
+      );
+    }
 
     try {
       await _mapStylePreferenceService.save(style);
@@ -2493,7 +2507,7 @@ class _HomePageState extends State<HomePage> {
   void _changeMapZoom(double delta) {
     final camera = _mapController.camera;
     final nextZoom = (camera.zoom + delta)
-        .clamp(_minMapZoom, _maxMapZoom)
+        .clamp(_minMapZoom, _activeMaxMapZoom)
         .toDouble();
     unawaited(_animateMapTo(camera.center, nextZoom));
   }
@@ -2501,7 +2515,7 @@ class _HomePageState extends State<HomePage> {
   void _openPlaceCluster(PlaceMarkerGroup group) {
     final zoomStep = group.places.length >= 8 ? 2.2 : 1.7;
     unawaited(
-      _animateMapTo(group.center, min(_mapZoom + zoomStep, _maxMapZoom)),
+      _animateMapTo(group.center, min(_mapZoom + zoomStep, _activeMaxMapZoom)),
     );
   }
 
@@ -2554,7 +2568,7 @@ class _HomePageState extends State<HomePage> {
               initialCenter: currentPosition,
               initialZoom: _initialMapZoom,
               minZoom: _minMapZoom,
-              maxZoom: _maxMapZoom,
+              maxZoom: _activeMaxMapZoom,
               interactionOptions: const InteractionOptions(
                 scrollWheelVelocity: 0.0015,
               ),
@@ -2827,7 +2841,7 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   children: [
                     _MapZoomControl(
-                      onZoomIn: _mapZoom < _maxMapZoom
+                      onZoomIn: _mapZoom < _activeMaxMapZoom
                           ? () => _changeMapZoom(0.75)
                           : null,
                       onZoomOut: _mapZoom > _minMapZoom
@@ -3130,7 +3144,7 @@ class _SatelliteMapLayer extends StatelessWidget {
     if (isDark) {
       imagery = ColorFiltered(
         colorFilter: const ColorFilter.mode(
-          Color(0x33000000),
+          Color(0x14000000),
           BlendMode.darken,
         ),
         child: imagery,

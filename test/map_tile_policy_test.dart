@@ -4,6 +4,12 @@ import 'package:tmaps/core/map_tile_policy.dart';
 void main() {
   test('satellite close zoom reuses the last reliable Kazakhstan tiles', () {
     expect(MapTilePolicy.satelliteMaxNativeZoom, 17);
+    expect(MapTilePolicy.satelliteMaxDisplayZoom, 18);
+    expect(
+      MapTilePolicy.satelliteMaxDisplayZoom -
+          MapTilePolicy.satelliteMaxNativeZoom,
+      lessThanOrEqualTo(1),
+    );
     expect(
       MapTilePolicy.satelliteLabelsMaxNativeZoom,
       greaterThanOrEqualTo(MapTilePolicy.satelliteMaxNativeZoom),

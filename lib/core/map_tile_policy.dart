@@ -20,6 +20,11 @@ abstract final class MapTilePolicy {
   static const satelliteMaxNativeZoom = 17;
   static const satelliteLabelsMaxNativeZoom = 18;
 
+  /// Esri returns placeholder imagery around Taldykorgan above level 17.
+  /// Allow one extra display level for a useful close view, but stop before
+  /// the native tile is enlarged so far that streets become unreadable.
+  static const double satelliteMaxDisplayZoom = 18;
+
   static const keepBuffer = 2;
   static const panBuffer = 1;
 }
