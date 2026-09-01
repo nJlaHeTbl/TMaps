@@ -7,6 +7,14 @@ abstract final class MapDisplayPolicy {
   static const double minPlaceZoom = 11.2;
   static const int maxVisibleMarkers = 90;
 
+  /// Touch-first screens and short browser windows need a shorter tool dock.
+  /// Pinch/scroll zoom remains available when the explicit +/- control is
+  /// hidden, so primary actions never get pushed outside the viewport.
+  static bool useCompactControls({
+    required double viewportWidth,
+    required double viewportHeight,
+  }) => viewportWidth < 700 || viewportHeight < 760;
+
   static final kazakhstanBounds = LatLngBounds(
     const LatLng(40.45, 46.45),
     const LatLng(55.55, 87.40),

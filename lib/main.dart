@@ -2554,6 +2554,13 @@ class _HomePageState extends State<HomePage> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
+    final viewport = MediaQuery.sizeOf(context);
+    final compactMapControls = MapDisplayPolicy.useCompactControls(
+      viewportWidth: viewport.width,
+      viewportHeight: viewport.height,
+    );
+    final mapControlGap = compactMapControls ? 8.0 : 12.0;
+    final mapActionSize = compactMapControls ? 50.0 : 54.0;
     return Scaffold(
       extendBodyBehindAppBar: true,
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -2839,23 +2846,27 @@ class _HomePageState extends State<HomePage> {
               bottom: routePoints.length >= 2 ? 150 : 28,
               child: SafeArea(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    _MapZoomControl(
-                      onZoomIn: _mapZoom < _activeMaxMapZoom
-                          ? () => _changeMapZoom(0.75)
-                          : null,
-                      onZoomOut: _mapZoom > _minMapZoom
-                          ? () => _changeMapZoom(-0.75)
-                          : null,
-                    ),
-                    const SizedBox(height: 12),
+                    if (!compactMapControls) ...[
+                      _MapZoomControl(
+                        onZoomIn: _mapZoom < _activeMaxMapZoom
+                            ? () => _changeMapZoom(0.75)
+                            : null,
+                        onZoomOut: _mapZoom > _minMapZoom
+                            ? () => _changeMapZoom(-0.75)
+                            : null,
+                      ),
+                      SizedBox(height: mapControlGap),
+                    ],
                     _MapDiscoveryControl(
+                      compact: compactMapControls,
                       onSearch: showPlaceSearch,
                       onQuickNeeds: isOpeningQuickNeeds ? null : showQuickNeeds,
                       onFavorites: showFavorites,
                       favoritesCount: _favoritePlaceKeys.length,
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: mapControlGap),
                     _MapActionButton(
                       icon: _mapBaseStyle == MapBaseStyle.satellite
                           ? Icons.satellite_alt_rounded
@@ -2870,8 +2881,9 @@ class _HomePageState extends State<HomePage> {
                       foregroundColor: _mapBaseStyle == MapBaseStyle.satellite
                           ? Colors.white
                           : scheme.onSurface,
+                      size: mapActionSize,
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: mapControlGap),
                     _MapActionButton(
                       icon: Icons.wc_rounded,
                       onPressed: isFindingNearest ? null : showNearestToilet,
@@ -2880,6 +2892,7 @@ class _HomePageState extends State<HomePage> {
                         alpha: isDark ? 0.26 : 0.13,
                       ),
                       foregroundColor: green,
+                      size: mapActionSize,
                       child: isFindingNearest
                           ? const SizedBox(
                               width: 21,
@@ -2890,7 +2903,7 @@ class _HomePageState extends State<HomePage> {
                             )
                           : null,
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: mapControlGap),
                     _MapActionButton(
                       icon: Icons.filter_alt_rounded,
                       onPressed: showFilters,
@@ -2899,13 +2912,14 @@ class _HomePageState extends State<HomePage> {
                           ? green.withValues(alpha: isDark ? 0.28 : 0.14)
                           : scheme.surface,
                       foregroundColor: filtersActive ? green : scheme.onSurface,
+                      size: mapActionSize,
                       child: _CategoryFilterIcon(
                         color: filtersActive ? green : scheme.onSurface,
                         count: showAllCategories ? 0 : _selectedCategoryCount,
                         showAll: showAllCategories,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: mapControlGap),
                     _MapActionButton(
                       icon: Icons.navigation_rounded,
                       onPressed: centerOnUser,
@@ -2916,9 +2930,10 @@ class _HomePageState extends State<HomePage> {
                       foregroundColor: _followUser
                           ? Colors.white
                           : scheme.onSurface,
+                      size: mapActionSize,
                     ),
                     if (_submissionHistory.isNotEmpty) ...[
-                      const SizedBox(height: 12),
+                      SizedBox(height: mapControlGap),
                       _MapActionButton(
                         icon: Icons.fact_check_rounded,
                         onPressed: showSubmissionHistory,
@@ -2927,14 +2942,15 @@ class _HomePageState extends State<HomePage> {
                           0xFF2563EB,
                         ).withValues(alpha: isDark ? 0.28 : 0.13),
                         foregroundColor: const Color(0xFF2563EB),
+                        size: mapActionSize,
                       ),
                     ],
-                    const SizedBox(height: 12),
+                    SizedBox(height: mapControlGap),
                     _MapActionButton(
                       icon: Icons.add_rounded,
                       backgroundColor: green,
                       foregroundColor: Colors.white,
-                      size: 62,
+                      size: compactMapControls ? 58 : 62,
                       onPressed: isAddingToilet ? null : addToilet,
                       tooltip: 'Добавить место',
                       child: isAddingToilet
@@ -4271,12 +4287,14 @@ class _UserLocationMarker extends StatelessWidget {
 
 class _MapDiscoveryControl extends StatelessWidget {
   const _MapDiscoveryControl({
+    required this.compact,
     required this.onSearch,
     required this.onQuickNeeds,
     required this.onFavorites,
     required this.favoritesCount,
   });
 
+  final bool compact;
   final VoidCallback onSearch;
   final VoidCallback? onQuickNeeds;
   final VoidCallback onFavorites;
@@ -4285,42 +4303,47 @@ class _MapDiscoveryControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    Widget divider() => Container(
+      width: compact ? 1 : 27,
+      height: compact ? 27 : 1,
+      color: scheme.outlineVariant,
+    );
+    final buttons = <Widget>[
+      _ZoomButton(
+        icon: Icons.search_rounded,
+        tooltip: 'Поиск места',
+        onPressed: onSearch,
+        foregroundColor: AppPalette.aqua,
+      ),
+      divider(),
+      _ZoomButton(
+        icon: Icons.bolt_rounded,
+        tooltip: 'Нужно сейчас: туалет, вода или зарядка',
+        onPressed: onQuickNeeds,
+        foregroundColor: const Color(0xFFF59E0B),
+      ),
+      divider(),
+      _ZoomButton(
+        icon: favoritesCount > 0
+            ? Icons.bookmark_rounded
+            : Icons.bookmark_border_rounded,
+        tooltip: 'Избранное: $favoritesCount',
+        onPressed: onFavorites,
+        foregroundColor: favoritesCount > 0
+            ? AppPalette.pink
+            : AppPalette.muted,
+        badgeCount: favoritesCount,
+      ),
+    ];
     return Material(
       elevation: 9,
       shadowColor: Colors.black.withValues(alpha: 0.2),
       color: scheme.surface.withValues(alpha: 0.97),
       borderRadius: BorderRadius.circular(18),
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _ZoomButton(
-            icon: Icons.search_rounded,
-            tooltip: 'Поиск места',
-            onPressed: onSearch,
-            foregroundColor: AppPalette.aqua,
-          ),
-          Container(width: 27, height: 1, color: scheme.outlineVariant),
-          _ZoomButton(
-            icon: Icons.bolt_rounded,
-            tooltip: 'Нужно сейчас: туалет, вода или зарядка',
-            onPressed: onQuickNeeds,
-            foregroundColor: const Color(0xFFF59E0B),
-          ),
-          Container(width: 27, height: 1, color: scheme.outlineVariant),
-          _ZoomButton(
-            icon: favoritesCount > 0
-                ? Icons.bookmark_rounded
-                : Icons.bookmark_border_rounded,
-            tooltip: 'Избранное: $favoritesCount',
-            onPressed: onFavorites,
-            foregroundColor: favoritesCount > 0
-                ? AppPalette.pink
-                : AppPalette.muted,
-            badgeCount: favoritesCount,
-          ),
-        ],
-      ),
+      child: compact
+          ? Row(mainAxisSize: MainAxisSize.min, children: buttons)
+          : Column(mainAxisSize: MainAxisSize.min, children: buttons),
     );
   }
 }

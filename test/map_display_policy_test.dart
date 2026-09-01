@@ -4,6 +4,30 @@ import 'package:latlong2/latlong.dart';
 import 'package:tmaps/core/map_display_policy.dart';
 
 void main() {
+  test('uses a compact tool dock when a viewport is narrow or short', () {
+    expect(
+      MapDisplayPolicy.useCompactControls(
+        viewportWidth: 390,
+        viewportHeight: 844,
+      ),
+      isTrue,
+    );
+    expect(
+      MapDisplayPolicy.useCompactControls(
+        viewportWidth: 1200,
+        viewportHeight: 650,
+      ),
+      isTrue,
+    );
+    expect(
+      MapDisplayPolicy.useCompactControls(
+        viewportWidth: 1280,
+        viewportHeight: 800,
+      ),
+      isFalse,
+    );
+  });
+
   final places = [
     {'lat': 45.0156, 'lng': 78.3731, 'name': 'Талдыкорган'},
     {'lat': 43.2389, 'lng': 76.8897, 'name': 'Алматы'},
