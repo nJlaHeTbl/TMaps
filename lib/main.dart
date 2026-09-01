@@ -2608,16 +2608,45 @@ class _HomePageState extends State<HomePage> {
                 ),
               RichAttributionWidget(
                 attributions: [
-                  if (_mapBaseStyle == MapBaseStyle.satellite)
+                  if (_mapBaseStyle == MapBaseStyle.satellite) ...[
+                    const LogoSourceAttribution(
+                      Text(
+                        '© Esri · © OSM',
+                        style: TextStyle(
+                          color: Color(0xFF1F2937),
+                          backgroundColor: Color(0xDDF8FAFC),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      tooltip: 'Источники спутниковой карты',
+                      height: 22,
+                    ),
                     const TextSourceAttribution(
                       'Imagery © Esri, Vantor, Earthstar Geographics, '
                       'GIS User Community; labels © Esri, TomTom, Garmin, '
                       'OpenStreetMap contributors',
-                    )
-                  else
+                    ),
+                  ] else ...[
+                    const LogoSourceAttribution(
+                      Text(
+                        '© OpenStreetMap',
+                        style: TextStyle(
+                          color: Color(0xFF1F2937),
+                          backgroundColor: Color(0xDDF8FAFC),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      tooltip: 'Источник данных карты',
+                      height: 22,
+                    ),
                     const TextSourceAttribution('OpenStreetMap contributors'),
+                  ],
                 ],
-                popupInitialDisplayDuration: Duration(seconds: 5),
+                permanentHeight: 22,
+                showFlutterMapAttribution: false,
+                popupInitialDisplayDuration: Duration.zero,
               ),
 
               // =================================================
