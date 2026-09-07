@@ -43,6 +43,15 @@ void main() {
 
     expect(english.translate('Туалеты'), 'Toilets');
     expect(kazakh.translate('Туалеты'), 'Дәретханалар');
+    expect(english.translate('Общественные туалеты'), 'Public toilets');
+    expect(
+      kazakh.translate('Добавленные туалеты'),
+      'Қолданушылар қосқан дәретханалар',
+    );
+    expect(english.translate('Талдыкорган'), 'Taldykorgan');
+    expect(kazakh.translate('Талдыкорган'), 'Талдықорған');
+    expect(english.translate('Ясно'), 'Clear');
+    expect(kazakh.translate('Ясно'), 'Ашық');
     expect(english.translate('Мои заявки: 4'), 'My submissions: 4');
     expect(kazakh.translate('Мои заявки: 4'), 'Менің өтінімдерім: 4');
   });

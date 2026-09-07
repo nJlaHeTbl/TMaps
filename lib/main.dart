@@ -5085,7 +5085,8 @@ class _WeatherChip extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   LocalizedText(
-                    '${weather.temperature.round()}° · ${weather.condition}',
+                    '${weather.temperature.round()}° · '
+                    '${context.l10n.translate(weather.condition)}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -5173,7 +5174,8 @@ class _WeatherDetailsSheet extends StatelessWidget {
                         ),
                       ),
                       LocalizedText(
-                        '${weather.temperature.round()}° · ${weather.condition}',
+                        '${weather.temperature.round()}° · '
+                        '${context.l10n.translate(weather.condition)}',
                         style: TextStyle(
                           color: theme.colorScheme.onSurfaceVariant,
                           fontSize: 15,
