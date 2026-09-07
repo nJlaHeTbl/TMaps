@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 import '../core/app_palette.dart';
 import '../core/place_info.dart';
 import '../core/place_search.dart';
+import '../l10n/app_localizations.dart';
 import '../presentation/place_category_style.dart';
 
 class PlaceSearchSheet extends StatefulWidget {
@@ -87,7 +88,7 @@ class _PlaceSearchSheetState extends State<PlaceSearchSheet> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          LocalizedText(
                             widget.title,
                             style: const TextStyle(
                               fontWeight: FontWeight.w900,
@@ -95,7 +96,7 @@ class _PlaceSearchSheetState extends State<PlaceSearchSheet> {
                               letterSpacing: -0.3,
                             ),
                           ),
-                          Text(
+                          LocalizedText(
                             widget.subtitle ??
                                 '${widget.places.length} точки по Казахстану',
                             style: const TextStyle(
@@ -107,7 +108,7 @@ class _PlaceSearchSheetState extends State<PlaceSearchSheet> {
                       ),
                     ),
                     IconButton(
-                      tooltip: 'Закрыть',
+                      tooltip: context.l10n.translate('Закрыть'),
                       onPressed: () => Navigator.pop(context),
                       icon: const Icon(Icons.close_rounded),
                     ),
@@ -122,12 +123,14 @@ class _PlaceSearchSheetState extends State<PlaceSearchSheet> {
                   textInputAction: TextInputAction.search,
                   onChanged: (value) => setState(() => _query = value),
                   decoration: InputDecoration(
-                    hintText: 'Название, вода, АЗС, кафе, туалет…',
+                    hintText: context.l10n.translate(
+                      'Название, вода, АЗС, кафе, туалет…',
+                    ),
                     prefixIcon: const Icon(Icons.search_rounded),
                     suffixIcon: _query.isEmpty
                         ? null
                         : IconButton(
-                            tooltip: 'Очистить поиск',
+                            tooltip: context.l10n.translate('Очистить поиск'),
                             onPressed: () {
                               _controller.clear();
                               setState(() => _query = '');
@@ -181,7 +184,7 @@ class _PlaceSearchSheetState extends State<PlaceSearchSheet> {
                       size: 17,
                     ),
                     const SizedBox(width: 6),
-                    Text(
+                    LocalizedText(
                       _query.trim().isEmpty
                           ? widget.sectionLabel
                           : 'Показано: ${results.length}',
@@ -252,7 +255,7 @@ class _SearchCategoryChip extends StatelessWidget {
         showCheckmark: false,
         onSelected: (_) => onTap(),
         avatar: Icon(icon, size: 16, color: color),
-        label: Text(label),
+        label: LocalizedText(label),
         labelStyle: TextStyle(
           fontSize: 11.5,
           fontWeight: FontWeight.w800,
@@ -314,7 +317,7 @@ class _PlaceSearchTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    LocalizedText(
                       PlaceInfo.titleOf(place),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -324,7 +327,7 @@ class _PlaceSearchTile extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 3),
-                    Text(
+                    LocalizedText(
                       '${PlaceInfo.kindLabel(place)} • ${_formatDistance(result.distanceMeters)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -401,7 +404,7 @@ class _MiniBadge extends StatelessWidget {
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(
+      child: LocalizedText(
         text,
         style: TextStyle(
           color: color,
@@ -442,12 +445,12 @@ class _EmptySearchResult extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            Text(
+            LocalizedText(
               title,
               style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
             ),
             const SizedBox(height: 5),
-            Text(
+            LocalizedText(
               message,
               textAlign: TextAlign.center,
               style: const TextStyle(color: AppPalette.muted, fontSize: 12),

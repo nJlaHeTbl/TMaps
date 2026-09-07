@@ -11,17 +11,35 @@ class PlaceSearchResult {
 
 abstract final class PlaceSearch {
   static const _aliases = <PlaceKind, String>{
-    PlaceKind.publicToilet: 'туалет wc уборная санузел',
+    PlaceKind.publicToilet:
+        'туалет wc уборная санузел общественный '
+        'дәретхана әжетхана дәрет орны azhethana darethana '
+        'toilet restroom bathroom lavatory washroom loo public',
     PlaceKind.communityToilet:
-        'туалет wc от людей сообщество добавили пользователи',
-    PlaceKind.cafe: 'кафе еда ресторан кофе столовая',
-    PlaceKind.fuel: 'азс заправка бензин топливо',
-    PlaceKind.organization: 'место организация заведение магазин учреждение',
-    PlaceKind.phoneCharging: 'телефон зарядка розетка usb',
-    PlaceKind.evCharging: 'электро электромобиль зарядка авто ev',
+        'туалет wc уборная санузел от людей сообщество '
+        'добавили пользователи дәретхана әжетхана қолданушы қосқан '
+        'azhethana darethana toilet restroom bathroom community user added',
+    PlaceKind.cafe:
+        'кафе еда ресторан кофе столовая дәмхана мейрамхана '
+        'асхана тамақ тағам cafe coffee restaurant food diner cafeteria canteen eat',
+    PlaceKind.fuel:
+        'азс ажқс заправка бензин топливо газ жанармай отын zhanarmai '
+        'fuel gas petrol gasoline filling station gas station service station',
+    PlaceKind.organization:
+        'место организация заведение магазин учреждение офис ұйым орын '
+        'мекеме дүкен сауда орны нысан duken organization place shop store venue business institution office',
+    PlaceKind.phoneCharging:
+        'телефон зарядка зарядить зарядное устройство розетка usb телефонды '
+        'қуаттау зарядтау қуаттағыш тоқ көзі quattau phone charging charger outlet socket plug power',
+    PlaceKind.evCharging:
+        'электро электромобиль электрозарядка зарядка авто ev электр көлігі '
+        'электр автокөлік көлігін қуаттау зарядтау станциясы elektr koligi '
+        'electric vehicle car charging charger station',
     PlaceKind.water:
-        'вода питьевая автомат водомат колонка водокачка скважина колодец '
-        'родник фонтанчик набрать бутыль',
+        'вода питьевая пить автомат водомат колонка кран водокачка скважина '
+        'колодец родник фонтанчик набрать бутыль су ауыз су су автоматы су құю құдық '
+        'ұңғыма кран су құбыры бұлақ субұрқақ auyz su qudyq bulaq drinking water potable '
+        'refill water vending machine well tap fountain spring water point bottle',
   };
 
   static List<PlaceSearchResult> find(

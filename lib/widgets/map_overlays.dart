@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../core/app_palette.dart';
+import '../l10n/app_localizations.dart';
 
 enum AddLocationMode { current, chooseOnMap, roadAlert, submissions }
 
@@ -21,7 +22,7 @@ class AddLocationChoiceSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            const LocalizedText(
               'Добавить место',
               style: TextStyle(
                 fontSize: 25,
@@ -30,7 +31,7 @@ class AddLocationChoiceSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 6),
-            const Text(
+            const LocalizedText(
               'Туалет, кафе, организация, вода или зарядка — выбери точку рядом с собой либо на карте.',
               style: TextStyle(color: AppPalette.muted, height: 1.35),
             ),
@@ -92,7 +93,7 @@ class PedestrianAlertLocationSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            const LocalizedText(
               'Где проблема?',
               style: TextStyle(
                 fontSize: 25,
@@ -101,7 +102,7 @@ class PedestrianAlertLocationSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 6),
-            const Text(
+            const LocalizedText(
               'Отметь точку на тропинке или дороге. Предупреждение будет временным и исчезнет автоматически.',
               style: TextStyle(color: AppPalette.muted, height: 1.35),
             ),
@@ -178,7 +179,7 @@ class _LocationChoice extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    LocalizedText(
                       title,
                       style: const TextStyle(
                         fontWeight: FontWeight.w900,
@@ -186,7 +187,7 @@ class _LocationChoice extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 3),
-                    Text(
+                    LocalizedText(
                       subtitle,
                       style: const TextStyle(
                         color: AppPalette.muted,
@@ -252,7 +253,7 @@ class PlacePickerOverlay extends StatelessWidget {
                         horizontal: 14,
                         vertical: 10,
                       ),
-                      child: Text(
+                      child: LocalizedText(
                         'Двигай карту — метка останется по центру',
                         textAlign: TextAlign.center,
                         style: TextStyle(
@@ -304,14 +305,14 @@ class PlacePickerOverlay extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
+                                LocalizedText(
                                   title,
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
-                                Text(
+                                LocalizedText(
                                   '${position.latitude.toStringAsFixed(5)}, '
                                   '${position.longitude.toStringAsFixed(5)}',
                                   style: const TextStyle(
@@ -330,7 +331,7 @@ class PlacePickerOverlay extends StatelessWidget {
                           Expanded(
                             child: OutlinedButton(
                               onPressed: onCancel,
-                              child: const Text('Отмена'),
+                              child: const LocalizedText('Отмена'),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -339,7 +340,7 @@ class PlacePickerOverlay extends StatelessWidget {
                             child: FilledButton.icon(
                               onPressed: onConfirm,
                               icon: const Icon(Icons.check_rounded),
-                              label: Text(confirmLabel),
+                              label: LocalizedText(confirmLabel),
                             ),
                           ),
                         ],
@@ -406,7 +407,7 @@ class MapZoomHint extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
+                  LocalizedText(
                     'Приблизь нужный город',
                     style: TextStyle(
                       color: Colors.white,
@@ -414,7 +415,7 @@ class MapZoomHint extends StatelessWidget {
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  Text(
+                  LocalizedText(
                     'Покажем только точки в этой области',
                     style: TextStyle(color: Color(0xFFD8F7EA), fontSize: 10.5),
                   ),
@@ -462,13 +463,13 @@ class MapEmptyHint extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
+                  LocalizedText(
                     'Здесь нет точек «$label»',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
-                  const Text(
+                  const LocalizedText(
                     'Передвинь карту или немного отдали её',
                     style: TextStyle(color: AppPalette.muted, fontSize: 10.5),
                   ),
@@ -528,11 +529,11 @@ class LocationPromptCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
+                    LocalizedText(
                       title,
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
-                    Text(
+                    LocalizedText(
                       message,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,

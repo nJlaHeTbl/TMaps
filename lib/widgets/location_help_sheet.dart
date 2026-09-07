@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/app_palette.dart';
+import '../l10n/app_localizations.dart';
 
 class LocationHelpSheet extends StatelessWidget {
   const LocationHelpSheet({
@@ -56,7 +57,7 @@ class LocationHelpSheet extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 14),
-              Text(
+              LocalizedText(
                 permissionBlocked
                     ? 'Разреши доступ к геопозиции'
                     : 'Поможем включить GPS',
@@ -66,7 +67,7 @@ class LocationHelpSheet extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
-              Text(
+              LocalizedText(
                 permissionBlocked
                     ? 'TMaps работает, но браузер заблокировал передачу координат этому сайту.'
                     : 'Проверь разрешение на геопозицию и повтори попытку.',
@@ -116,7 +117,7 @@ class LocationHelpSheet extends StatelessWidget {
                     onRetry();
                   },
                   icon: const Icon(Icons.my_location_rounded),
-                  label: const Text('Проверить GPS'),
+                  label: const LocalizedText('Проверить GPS'),
                 ),
               ),
               const SizedBox(height: 8),
@@ -124,7 +125,7 @@ class LocationHelpSheet extends StatelessWidget {
                 width: double.infinity,
                 child: TextButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Закрыть'),
+                  child: const LocalizedText('Закрыть'),
                 ),
               ),
             ],
@@ -168,7 +169,7 @@ class _LocationStep extends StatelessWidget {
               color: AppPalette.emerald.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Text(
+            child: LocalizedText(
               number,
               style: const TextStyle(
                 color: AppPalette.emerald,
@@ -181,12 +182,12 @@ class _LocationStep extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                LocalizedText(
                   title,
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 3),
-                Text(
+                LocalizedText(
                   text,
                   style: TextStyle(
                     color: scheme.onSurfaceVariant,

@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -28,9 +29,11 @@ import 'core/weather_snapshot.dart';
 import 'data/http_community_backend.dart';
 import 'data/supabase_community_backend.dart';
 import 'data/toilet_repository.dart';
+import 'l10n/app_localizations.dart';
 import 'presentation/place_category_style.dart';
 import 'services/favorites_service.dart';
 import 'services/live_location_service.dart';
+import 'services/language_preference_service.dart';
 import 'services/map_style_preference_service.dart';
 import 'services/place_share_service.dart';
 import 'services/route_service.dart';
@@ -78,12 +81,16 @@ class TMapsApp extends StatefulWidget {
 class _TMapsAppState extends State<TMapsApp> {
   final ThemePreferenceService _themePreferenceService =
       const ThemePreferenceService();
+  final LanguagePreferenceService _languagePreferenceService =
+      const LanguagePreferenceService();
   ThemeMode _themeMode = ThemeMode.system;
+  AppLanguage _language = AppLanguage.system;
 
   @override
   void initState() {
     super.initState();
     unawaited(_loadTheme());
+    unawaited(_loadLanguage());
   }
 
   Future<void> _loadTheme() async {
@@ -96,6 +103,23 @@ class _TMapsAppState extends State<TMapsApp> {
     await _themePreferenceService.save(themeMode);
   }
 
+  Future<void> _loadLanguage() async {
+    final language = await _languagePreferenceService.load();
+    if (mounted) setState(() => _language = language);
+  }
+
+  Future<void> _setLanguage(AppLanguage language) async {
+    setState(() => _language = language);
+    await _languagePreferenceService.save(language);
+  }
+
+  Locale? get _selectedLocale => switch (_language) {
+    AppLanguage.system => null,
+    AppLanguage.russian => const Locale('ru'),
+    AppLanguage.kazakh => const Locale('kk'),
+    AppLanguage.english => const Locale('en'),
+  };
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -104,7 +128,30 @@ class _TMapsAppState extends State<TMapsApp> {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: _themeMode,
-      home: HomePage(themeMode: _themeMode, onThemeModeChanged: _setThemeMode),
+      locale: _selectedLocale,
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      localeListResolutionCallback: (locales, supportedLocales) {
+        for (final locale in locales ?? const <Locale>[]) {
+          for (final supportedLocale in supportedLocales) {
+            if (supportedLocale.languageCode == locale.languageCode) {
+              return supportedLocale;
+            }
+          }
+        }
+        return const Locale('ru');
+      },
+      home: HomePage(
+        themeMode: _themeMode,
+        onThemeModeChanged: _setThemeMode,
+        language: _language,
+        onLanguageChanged: _setLanguage,
+      ),
     );
   }
 }
@@ -114,10 +161,14 @@ class HomePage extends StatefulWidget {
     super.key,
     required this.themeMode,
     required this.onThemeModeChanged,
+    required this.language,
+    required this.onLanguageChanged,
   });
 
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
+  final AppLanguage language;
+  final ValueChanged<AppLanguage> onLanguageChanged;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -311,18 +362,25 @@ class _HomePageState extends State<HomePage> {
       (showToiletPlaces ? 1 : 0) + selectedCategories.length;
 
   String get _mapScopeLabel {
-    if (showAllCategories) return 'Все места';
+    if (showAllCategories) return context.l10n.translate('Все места');
     final labels = <String>[
-      if (showToiletPlaces) 'Туалеты',
-      ...selectedCategories.map((kind) => kind.shortLabel),
+      if (showToiletPlaces) context.l10n.translate('Туалеты'),
+      ...selectedCategories.map(
+        (kind) => context.l10n.translate(kind.shortLabel),
+      ),
     ];
     if (labels.length <= 2) return labels.join(' + ');
-    return '${labels.length} категории';
+    return context.l10n.translate('{count} категории', {
+      'count': labels.length,
+    });
   }
 
-  String get _mapSummary => showAllCategories
-      ? '${visibleToilets.length} мест • все категории'
-      : '${visibleToilets.length} мест • $_mapScopeLabel';
+  String get _mapSummary => context.l10n.translate(
+    showAllCategories
+        ? '{count} мест • все категории'
+        : '{count} мест • {scope}',
+    {'count': visibleToilets.length, 'scope': _mapScopeLabel},
+  );
 
   IconData get _clusterIcon {
     if (showAllCategories || _selectedCategoryCount != 1) {
@@ -442,7 +500,7 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           behavior: SnackBarBehavior.floating,
-          content: Text('Не удалось сохранить выбранный слой карты'),
+          content: LocalizedText('Не удалось сохранить выбранный слой карты'),
         ),
       );
     }
@@ -521,7 +579,7 @@ class _HomePageState extends State<HomePage> {
         SnackBar(
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 2),
-          content: Text(
+          content: LocalizedText(
             wasFavorite
                 ? 'Место удалено из избранного'
                 : 'Место сохранено в избранное',
@@ -562,13 +620,13 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 const SizedBox(height: 18),
-                const Text(
+                const LocalizedText(
                   'Добро пожаловать в TMaps',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
-                Text(
+                LocalizedText(
                   'Как тебя называть?',
                   style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
                 ),
@@ -578,10 +636,10 @@ class _HomePageState extends State<HomePage> {
                   autofocus: true,
                   maxLength: 30,
                   textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(
-                    labelText: 'Имя',
-                    hintText: 'Например: Мирас',
-                    prefixIcon: Icon(Icons.person_outline),
+                  decoration: InputDecoration(
+                    labelText: context.l10n.translate('Имя'),
+                    hintText: context.l10n.translate('Например: Мирас'),
+                    prefixIcon: const Icon(Icons.person_outline),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -597,7 +655,7 @@ class _HomePageState extends State<HomePage> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             behavior: SnackBarBehavior.floating,
-                            content: Text(issue),
+                            content: LocalizedText(issue),
                           ),
                         );
                         return;
@@ -619,7 +677,7 @@ class _HomePageState extends State<HomePage> {
                         _startLocation(requestPermission: true, center: true),
                       );
                     },
-                    child: const Text('Продолжить'),
+                    child: const LocalizedText('Продолжить'),
                   ),
                 ),
               ],
@@ -758,7 +816,7 @@ class _HomePageState extends State<HomePage> {
 
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text(_locationHelpMessage)));
+    ).showSnackBar(SnackBar(content: LocalizedText(_locationHelpMessage)));
   }
 
   String get _locationHelpMessage => switch (_locationState) {
@@ -799,7 +857,9 @@ class _HomePageState extends State<HomePage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             behavior: SnackBarBehavior.floating,
-            content: Text('Рядом пока нет подтверждённых полезных мест'),
+            content: LocalizedText(
+              'Рядом пока нет подтверждённых полезных мест',
+            ),
           ),
         );
         return;
@@ -828,7 +888,9 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           behavior: SnackBarBehavior.floating,
-          content: Text('Ссылка на место скопирована — отправь её другу'),
+          content: LocalizedText(
+            'Ссылка на место скопирована — отправь её другу',
+          ),
         ),
       );
     } catch (_) {
@@ -836,7 +898,7 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           behavior: SnackBarBehavior.floating,
-          content: Text('Не удалось скопировать ссылку'),
+          content: LocalizedText('Не удалось скопировать ссылку'),
         ),
       );
     }
@@ -906,7 +968,9 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           behavior: SnackBarBehavior.floating,
-          content: Text(error.toString().replaceFirst('Exception: ', '')),
+          content: LocalizedText(
+            error.toString().replaceFirst('Exception: ', ''),
+          ),
         ),
       );
     } finally {
@@ -1138,7 +1202,7 @@ class _HomePageState extends State<HomePage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    const LocalizedText(
                       'Фильтры карты',
                       style: TextStyle(
                         fontSize: 22,
@@ -1146,12 +1210,12 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    const Text(
+                    const LocalizedText(
                       'Выбирай сразу несколько категорий — например, туалеты и питьевую воду.',
                       style: TextStyle(color: AppPalette.muted, height: 1.35),
                     ),
                     const SizedBox(height: 14),
-                    const Text(
+                    const LocalizedText(
                       'Что показать',
                       style: TextStyle(fontWeight: FontWeight.w900),
                     ),
@@ -1227,8 +1291,10 @@ class _HomePageState extends State<HomePage> {
                     const SizedBox(height: 6),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Только бесплатные'),
-                      subtitle: const Text('Скрыть платные и без цены'),
+                      title: const LocalizedText('Только бесплатные'),
+                      subtitle: const LocalizedText(
+                        'Скрыть платные и без цены',
+                      ),
                       value: freeOnly,
                       onChanged: (value) {
                         setSheetState(() => freeOnly = value);
@@ -1236,8 +1302,8 @@ class _HomePageState extends State<HomePage> {
                     ),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Доступно для коляски'),
-                      subtitle: const Text(
+                      title: const LocalizedText('Доступно для коляски'),
+                      subtitle: const LocalizedText(
                         'Только места с подтверждённым доступом',
                       ),
                       value: wheelchairOnly,
@@ -1247,8 +1313,8 @@ class _HomePageState extends State<HomePage> {
                     ),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Добавленные пользователями'),
-                      subtitle: const Text(
+                      title: const LocalizedText('Добавленные пользователями'),
+                      subtitle: const LocalizedText(
                         'Скрыть автоматически загруженные точки',
                       ),
                       value: communityOnly,
@@ -1258,8 +1324,10 @@ class _HomePageState extends State<HomePage> {
                     ),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Туалеты в кафе, АЗС и организациях'),
-                      subtitle: const Text(
+                      title: const LocalizedText(
+                        'Туалеты в кафе, АЗС и организациях',
+                      ),
+                      subtitle: const LocalizedText(
                         'Места с доступом для клиентов или посетителей',
                       ),
                       value: venueToilets,
@@ -1269,8 +1337,10 @@ class _HomePageState extends State<HomePage> {
                     ),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Зарядка телефона'),
-                      subtitle: const Text('Точки зарядки мобильных устройств'),
+                      title: const LocalizedText('Зарядка телефона'),
+                      subtitle: const LocalizedText(
+                        'Точки зарядки мобильных устройств',
+                      ),
                       value: phoneCharging,
                       onChanged: (value) {
                         setSheetState(() => phoneCharging = value);
@@ -1278,8 +1348,10 @@ class _HomePageState extends State<HomePage> {
                     ),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Электрозарядные станции'),
-                      subtitle: const Text('Зарядка для электромобилей'),
+                      title: const LocalizedText('Электрозарядные станции'),
+                      subtitle: const LocalizedText(
+                        'Зарядка для электромобилей',
+                      ),
                       value: evCharging,
                       onChanged: (value) {
                         setSheetState(() => evCharging = value);
@@ -1305,7 +1377,7 @@ class _HomePageState extends State<HomePage> {
                               Navigator.of(context).pop();
                             },
                             icon: const Icon(Icons.layers_clear_rounded),
-                            label: const Text('Показать всё'),
+                            label: const LocalizedText('Показать всё'),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -1327,7 +1399,7 @@ class _HomePageState extends State<HomePage> {
                               });
                               Navigator.of(context).pop();
                             },
-                            child: const Text('Применить'),
+                            child: const LocalizedText('Применить'),
                           ),
                         ),
                       ],
@@ -1354,12 +1426,12 @@ class _HomePageState extends State<HomePage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                LocalizedText(
                   'Установить TMaps',
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
                 ),
                 SizedBox(height: 8),
-                Text(
+                LocalizedText(
                   'После установки карта будет открываться с главного экрана как обычное приложение.',
                 ),
                 SizedBox(height: 18),
@@ -1615,7 +1687,7 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           behavior: SnackBarBehavior.floating,
-          content: Text(
+          content: LocalizedText(
             draft.type == PedestrianAlertType.open
                 ? 'Спасибо! Участок отмечен как открытый'
                 : 'Предупреждение опубликовано и исчезнет автоматически',
@@ -1628,7 +1700,7 @@ class _HomePageState extends State<HomePage> {
         SnackBar(
           behavior: SnackBarBehavior.floating,
           backgroundColor: Colors.red.shade700,
-          content: Text('Не удалось отправить предупреждение: $error'),
+          content: LocalizedText('Не удалось отправить предупреждение: $error'),
         ),
       );
     } finally {
@@ -1681,7 +1753,7 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           behavior: SnackBarBehavior.floating,
-          content: Text(
+          content: LocalizedText(
             'Подожди 5 минут перед новой заявкой на перенос этой точки',
           ),
         ),
@@ -1708,7 +1780,7 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           behavior: SnackBarBehavior.floating,
-          content: Text(
+          content: LocalizedText(
             'Заявка #$correctionId на перенос отправлена. '
             'Метка изменится после проверки.',
           ),
@@ -1720,7 +1792,7 @@ class _HomePageState extends State<HomePage> {
         SnackBar(
           behavior: SnackBarBehavior.floating,
           backgroundColor: Colors.red.shade700,
-          content: Text('Не удалось отправить перенос: $error'),
+          content: LocalizedText('Не удалось отправить перенос: $error'),
         ),
       );
     } finally {
@@ -1841,7 +1913,7 @@ class _HomePageState extends State<HomePage> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         behavior: SnackBarBehavior.floating,
-                        content: Text(
+                        content: LocalizedText(
                           'Сначала выбери тип места: туалет, кафе, организацию или другое',
                         ),
                       ),
@@ -1856,7 +1928,9 @@ class _HomePageState extends State<HomePage> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         behavior: SnackBarBehavior.floating,
-                        content: Text('Напиши название места или организации'),
+                        content: LocalizedText(
+                          'Напиши название места или организации',
+                        ),
                       ),
                     );
                     return;
@@ -1866,7 +1940,7 @@ class _HomePageState extends State<HomePage> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         behavior: SnackBarBehavior.floating,
-                        content: Text(issue),
+                        content: LocalizedText(issue),
                       ),
                     );
                     return;
@@ -1939,12 +2013,12 @@ class _HomePageState extends State<HomePage> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          content: Text(
+          content: LocalizedText(
             'Заявка #$submissionId отправлена. '
             'Ты уже видишь её на карте, остальные — после проверки.',
           ),
           action: SnackBarAction(
-            label: 'Мои заявки',
+            label: context.l10n.translate('Мои заявки'),
             onPressed: () => unawaited(showSubmissionHistory()),
           ),
         ),
@@ -1962,7 +2036,7 @@ class _HomePageState extends State<HomePage> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          content: Text('Не удалось отправить заявку: $e'),
+          content: LocalizedText('Не удалось отправить заявку: $e'),
         ),
       );
     } finally {
@@ -2099,7 +2173,7 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           behavior: SnackBarBehavior.floating,
-          content: Text(
+          content: LocalizedText(
             '🆘 Сигнал «нужна бумага» виден людям рядом в течение 45 минут',
           ),
         ),
@@ -2110,7 +2184,7 @@ class _HomePageState extends State<HomePage> {
         SnackBar(
           behavior: SnackBarBehavior.floating,
           backgroundColor: Colors.red.shade700,
-          content: Text('Не удалось отправить сигнал помощи: $error'),
+          content: LocalizedText('Не удалось отправить сигнал помощи: $error'),
         ),
       );
     } finally {
@@ -2165,7 +2239,9 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           behavior: SnackBarBehavior.floating,
-          content: Text('Свою заявку должен подтвердить другой человек'),
+          content: LocalizedText(
+            'Свою заявку должен подтвердить другой человек',
+          ),
         ),
       );
       return;
@@ -2191,7 +2267,10 @@ class _HomePageState extends State<HomePage> {
               : 'Спасибо! Учли, что точку не удалось подтвердить',
       };
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(behavior: SnackBarBehavior.floating, content: Text(message)),
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: LocalizedText(message),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
@@ -2199,7 +2278,7 @@ class _HomePageState extends State<HomePage> {
         SnackBar(
           behavior: SnackBarBehavior.floating,
           backgroundColor: Colors.red.shade700,
-          content: Text('Не удалось сохранить проверку: $error'),
+          content: LocalizedText('Не удалось сохранить проверку: $error'),
         ),
       );
     } finally {
@@ -2225,7 +2304,7 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           behavior: SnackBarBehavior.floating,
-          content: Text(
+          content: LocalizedText(
             'Подожди 5 минут перед следующим обновлением этой точки',
           ),
         ),
@@ -2301,7 +2380,7 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           behavior: SnackBarBehavior.floating,
-          content: Text('Спасибо! Информация о месте обновлена'),
+          content: LocalizedText('Спасибо! Информация о месте обновлена'),
         ),
       );
     } catch (error) {
@@ -2310,7 +2389,7 @@ class _HomePageState extends State<HomePage> {
         SnackBar(
           behavior: SnackBarBehavior.floating,
           backgroundColor: Colors.red.shade700,
-          content: Text('Не удалось сохранить обновление: $error'),
+          content: LocalizedText('Не удалось сохранить обновление: $error'),
         ),
       );
     } finally {
@@ -2338,7 +2417,7 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: LocalizedText(
             isCurrent
                 ? 'Спасибо! Ты подтвердил, что место актуально'
                 : 'Спасибо! Отметили, что место нужно проверить',
@@ -2350,7 +2429,7 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: Colors.red.shade700,
-          content: Text('Не удалось сохранить оценку: $error'),
+          content: LocalizedText('Не удалось сохранить оценку: $error'),
         ),
       );
     } finally {
@@ -2428,7 +2507,7 @@ class _HomePageState extends State<HomePage> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          content: Text(
+          content: LocalizedText(
             '🚶 Пеший маршрут по дорожкам — ${formatDistance(result.distance)}',
           ),
         ),
@@ -2450,7 +2529,7 @@ class _HomePageState extends State<HomePage> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          content: Text('❌ Не удалось построить маршрут: $e'),
+          content: LocalizedText('❌ Не удалось построить маршрут: $e'),
         ),
       );
     }
@@ -2619,8 +2698,8 @@ class _HomePageState extends State<HomePage> {
               RichAttributionWidget(
                 attributions: [
                   if (_mapBaseStyle == MapBaseStyle.satellite) ...[
-                    const LogoSourceAttribution(
-                      Text(
+                    LogoSourceAttribution(
+                      const LocalizedText(
                         '© Esri · © OSM',
                         style: TextStyle(
                           color: Color(0xFF1F2937),
@@ -2629,7 +2708,9 @@ class _HomePageState extends State<HomePage> {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      tooltip: 'Источники спутниковой карты',
+                      tooltip: context.l10n.translate(
+                        'Источники спутниковой карты',
+                      ),
                       height: 22,
                     ),
                     const TextSourceAttribution(
@@ -2638,8 +2719,8 @@ class _HomePageState extends State<HomePage> {
                       'OpenStreetMap contributors',
                     ),
                   ] else ...[
-                    const LogoSourceAttribution(
-                      Text(
+                    LogoSourceAttribution(
+                      const LocalizedText(
                         '© OpenStreetMap',
                         style: TextStyle(
                           color: Color(0xFF1F2937),
@@ -2648,7 +2729,7 @@ class _HomePageState extends State<HomePage> {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      tooltip: 'Источник данных карты',
+                      tooltip: context.l10n.translate('Источник данных карты'),
                       height: 22,
                     ),
                     const TextSourceAttribution('OpenStreetMap contributors'),
@@ -2742,7 +2823,8 @@ class _HomePageState extends State<HomePage> {
                         child: Semantics(
                           button: true,
                           label:
-                              '${PlaceInfo.kindLabel(toilet)}: ${PlaceInfo.titleOf(toilet)}',
+                              '${context.l10n.translate(PlaceInfo.kindLabel(toilet))}: '
+                              '${context.l10n.translate(PlaceInfo.titleOf(toilet))}',
                           child: GestureDetector(
                             onTap: () {
                               showToiletInfo(toilet);
@@ -2810,6 +2892,8 @@ class _HomePageState extends State<HomePage> {
                     onInstall: showInstallInstructions,
                     themeMode: widget.themeMode,
                     onThemeModeChanged: widget.onThemeModeChanged,
+                    language: widget.language,
+                    onLanguageChanged: widget.onLanguageChanged,
                   ),
                 ),
               ),
@@ -2910,9 +2994,11 @@ class _HomePageState extends State<HomePage> {
                           ? Icons.satellite_alt_rounded
                           : Icons.layers_rounded,
                       onPressed: showMapStylePicker,
-                      tooltip: _mapBaseStyle == MapBaseStyle.satellite
-                          ? 'Спутниковая карта'
-                          : 'Слой карты',
+                      tooltip: context.l10n.translate(
+                        _mapBaseStyle == MapBaseStyle.satellite
+                            ? 'Спутниковая карта'
+                            : 'Слой карты',
+                      ),
                       backgroundColor: _mapBaseStyle == MapBaseStyle.satellite
                           ? AppPalette.aqua
                           : scheme.surface,
@@ -2925,7 +3011,7 @@ class _HomePageState extends State<HomePage> {
                     _MapActionButton(
                       icon: Icons.wc_rounded,
                       onPressed: isFindingNearest ? null : showNearestToilet,
-                      tooltip: 'WC — ближайший туалет',
+                      tooltip: context.l10n.translate('WC — ближайший туалет'),
                       backgroundColor: green.withValues(
                         alpha: isDark ? 0.26 : 0.13,
                       ),
@@ -2945,7 +3031,7 @@ class _HomePageState extends State<HomePage> {
                     _MapActionButton(
                       icon: Icons.filter_alt_rounded,
                       onPressed: showFilters,
-                      tooltip: 'Фильтры',
+                      tooltip: context.l10n.translate('Фильтры'),
                       backgroundColor: filtersActive
                           ? green.withValues(alpha: isDark ? 0.28 : 0.14)
                           : scheme.surface,
@@ -2961,7 +3047,7 @@ class _HomePageState extends State<HomePage> {
                     _MapActionButton(
                       icon: Icons.navigation_rounded,
                       onPressed: centerOnUser,
-                      tooltip: 'Моё местоположение',
+                      tooltip: context.l10n.translate('Моё местоположение'),
                       backgroundColor: _followUser
                           ? AppPalette.sky
                           : scheme.surface,
@@ -2975,7 +3061,9 @@ class _HomePageState extends State<HomePage> {
                       _MapActionButton(
                         icon: Icons.fact_check_rounded,
                         onPressed: showSubmissionHistory,
-                        tooltip: 'Мои заявки: ${_submissionHistory.length}',
+                        tooltip: context.l10n.translate('Мои заявки: {count}', {
+                          'count': _submissionHistory.length,
+                        }),
                         backgroundColor: const Color(
                           0xFF2563EB,
                         ).withValues(alpha: isDark ? 0.28 : 0.13),
@@ -2990,7 +3078,7 @@ class _HomePageState extends State<HomePage> {
                       foregroundColor: Colors.white,
                       size: compactMapControls ? 58 : 62,
                       onPressed: isAddingToilet ? null : addToilet,
-                      tooltip: 'Добавить место',
+                      tooltip: context.l10n.translate('Добавить место'),
                       child: isAddingToilet
                           ? const SizedBox(
                               width: 23,
@@ -3265,13 +3353,13 @@ class _MapStyleSheet extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      LocalizedText(
                         'Вид карты',
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      Text(
+                      LocalizedText(
                         'Переключай слой — точки и маршрут останутся на месте',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant,
@@ -3332,7 +3420,7 @@ class _MapStyleSheet extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
+                    child: LocalizedText(
                       'В спутниковом режиме используются снимки Esri, '
                       'а названия городов остаются поверх карты.',
                       style: theme.textTheme.bodySmall?.copyWith(
@@ -3374,7 +3462,9 @@ class _MapStyleOptionCard extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: '$title: $subtitle',
+      label:
+          '${context.l10n.translate(title)}: '
+          '${context.l10n.translate(subtitle)}',
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
@@ -3440,7 +3530,7 @@ class _MapStyleOptionCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    LocalizedText(
                       title,
                       style: const TextStyle(
                         fontWeight: FontWeight.w900,
@@ -3448,7 +3538,7 @@ class _MapStyleOptionCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
+                    LocalizedText(
                       subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -3472,12 +3562,24 @@ class _MapStyleOptionCard extends StatelessWidget {
 // ВЕРХНЯЯ ПАНЕЛЬ
 // =============================================================
 
+enum _HeaderPreferenceAction {
+  themeSystem,
+  themeLight,
+  themeDark,
+  languageSystem,
+  languageRussian,
+  languageKazakh,
+  languageEnglish,
+}
+
 class _GlassHeader extends StatelessWidget {
   final String? username;
   final String summary;
   final VoidCallback onInstall;
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
+  final AppLanguage language;
+  final ValueChanged<AppLanguage> onLanguageChanged;
 
   const _GlassHeader({
     required this.username,
@@ -3485,6 +3587,8 @@ class _GlassHeader extends StatelessWidget {
     required this.onInstall,
     required this.themeMode,
     required this.onThemeModeChanged,
+    required this.language,
+    required this.onLanguageChanged,
   });
 
   @override
@@ -3549,7 +3653,7 @@ class _GlassHeader extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    const LocalizedText(
                       'TMaps',
                       style: TextStyle(
                         fontSize: 21,
@@ -3571,7 +3675,7 @@ class _GlassHeader extends StatelessWidget {
                           child: child,
                         ),
                       ),
-                      child: Text(
+                      child: LocalizedText(
                         summary,
                         key: ValueKey(summary),
                         maxLines: 1,
@@ -3586,42 +3690,110 @@ class _GlassHeader extends StatelessWidget {
                   ],
                 ),
               ),
-              PopupMenuButton<ThemeMode>(
-                initialValue: themeMode,
-                tooltip: 'Оформление',
-                onSelected: onThemeModeChanged,
-                icon: Icon(switch (themeMode) {
-                  ThemeMode.light => Icons.light_mode_rounded,
-                  ThemeMode.dark => Icons.dark_mode_rounded,
-                  ThemeMode.system => Icons.phone_iphone_rounded,
-                }, size: 21),
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: ThemeMode.system,
-                    child: _ThemeMenuItem(
-                      icon: Icons.phone_iphone_rounded,
-                      label: 'Как на телефоне',
+              PopupMenuButton<_HeaderPreferenceAction>(
+                tooltip: context.l10n.translate('Настройки приложения'),
+                onSelected: (action) {
+                  switch (action) {
+                    case _HeaderPreferenceAction.themeSystem:
+                      onThemeModeChanged(ThemeMode.system);
+                    case _HeaderPreferenceAction.themeLight:
+                      onThemeModeChanged(ThemeMode.light);
+                    case _HeaderPreferenceAction.themeDark:
+                      onThemeModeChanged(ThemeMode.dark);
+                    case _HeaderPreferenceAction.languageSystem:
+                      onLanguageChanged(AppLanguage.system);
+                    case _HeaderPreferenceAction.languageRussian:
+                      onLanguageChanged(AppLanguage.russian);
+                    case _HeaderPreferenceAction.languageKazakh:
+                      onLanguageChanged(AppLanguage.kazakh);
+                    case _HeaderPreferenceAction.languageEnglish:
+                      onLanguageChanged(AppLanguage.english);
+                  }
+                },
+                icon: Icon(
+                  language == AppLanguage.system
+                      ? switch (themeMode) {
+                          ThemeMode.light => Icons.light_mode_rounded,
+                          ThemeMode.dark => Icons.dark_mode_rounded,
+                          ThemeMode.system => Icons.settings_rounded,
+                        }
+                      : Icons.language_rounded,
+                  size: 21,
+                ),
+                itemBuilder: (context) => [
+                  PopupMenuItem<_HeaderPreferenceAction>(
+                    enabled: false,
+                    child: LocalizedText(
+                      'Оформление',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
-                  PopupMenuItem(
-                    value: ThemeMode.light,
-                    child: _ThemeMenuItem(
-                      icon: Icons.light_mode_rounded,
-                      label: 'Светлая тема',
+                  _preferenceMenuItem(
+                    context,
+                    value: _HeaderPreferenceAction.themeSystem,
+                    icon: Icons.phone_iphone_rounded,
+                    label: 'Как на телефоне',
+                    selected: themeMode == ThemeMode.system,
+                  ),
+                  _preferenceMenuItem(
+                    context,
+                    value: _HeaderPreferenceAction.themeLight,
+                    icon: Icons.light_mode_rounded,
+                    label: 'Светлая тема',
+                    selected: themeMode == ThemeMode.light,
+                  ),
+                  _preferenceMenuItem(
+                    context,
+                    value: _HeaderPreferenceAction.themeDark,
+                    icon: Icons.dark_mode_rounded,
+                    label: 'Тёмная тема',
+                    selected: themeMode == ThemeMode.dark,
+                  ),
+                  const PopupMenuDivider(),
+                  PopupMenuItem<_HeaderPreferenceAction>(
+                    enabled: false,
+                    child: LocalizedText(
+                      'Язык',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
-                  PopupMenuItem(
-                    value: ThemeMode.dark,
-                    child: _ThemeMenuItem(
-                      icon: Icons.dark_mode_rounded,
-                      label: 'Тёмная тема',
-                    ),
+                  _preferenceMenuItem(
+                    context,
+                    value: _HeaderPreferenceAction.languageSystem,
+                    icon: Icons.phone_iphone_rounded,
+                    label: context.l10n.translate('Как в системе'),
+                    selected: language == AppLanguage.system,
+                  ),
+                  _preferenceMenuItem(
+                    context,
+                    value: _HeaderPreferenceAction.languageRussian,
+                    icon: Icons.language_rounded,
+                    label: 'Русский',
+                    selected: language == AppLanguage.russian,
+                  ),
+                  _preferenceMenuItem(
+                    context,
+                    value: _HeaderPreferenceAction.languageKazakh,
+                    icon: Icons.language_rounded,
+                    label: 'Қазақша',
+                    selected: language == AppLanguage.kazakh,
+                  ),
+                  _preferenceMenuItem(
+                    context,
+                    value: _HeaderPreferenceAction.languageEnglish,
+                    icon: Icons.language_rounded,
+                    label: 'English',
+                    selected: language == AppLanguage.english,
                   ),
                 ],
               ),
               IconButton.filledTonal(
                 onPressed: onInstall,
-                tooltip: 'Установить TMaps',
+                tooltip: context.l10n.translate('Установить TMaps'),
                 icon: const Icon(Icons.install_mobile_rounded, size: 21),
               ),
               if (username != null) ...[
@@ -3649,7 +3821,7 @@ class _GlassHeader extends StatelessWidget {
                       ),
                       const SizedBox(width: 5),
                       Flexible(
-                        child: Text(
+                        child: LocalizedText(
                           username!,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -3668,18 +3840,31 @@ class _GlassHeader extends StatelessWidget {
       ),
     );
   }
-}
 
-class _ThemeMenuItem extends StatelessWidget {
-  const _ThemeMenuItem({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [Icon(icon, size: 20), const SizedBox(width: 10), Text(label)],
+  PopupMenuItem<_HeaderPreferenceAction> _preferenceMenuItem(
+    BuildContext context, {
+    required _HeaderPreferenceAction value,
+    required IconData icon,
+    required String label,
+    required bool selected,
+  }) {
+    return PopupMenuItem<_HeaderPreferenceAction>(
+      value: value,
+      child: Row(
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: LocalizedText(label)),
+          if (selected) ...[
+            const SizedBox(width: 10),
+            Icon(
+              Icons.check_rounded,
+              size: 19,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -3825,14 +4010,14 @@ class _MapLegendBarState extends State<_MapLegendBar> {
                 _LegendScrollButton(
                   icon: Icons.chevron_left_rounded,
                   alignment: Alignment.centerLeft,
-                  tooltip: 'Предыдущие категории',
+                  tooltip: context.l10n.translate('Предыдущие категории'),
                   onPressed: () => _scrollBy(-190),
                 ),
               if (_canScrollForward)
                 _LegendScrollButton(
                   icon: Icons.chevron_right_rounded,
                   alignment: Alignment.centerRight,
-                  tooltip: 'Ещё категории',
+                  tooltip: context.l10n.translate('Ещё категории'),
                   onPressed: () => _scrollBy(190),
                 ),
             ],
@@ -3913,7 +4098,10 @@ class _LegendItem extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: 'Категория $label: ${selected ? 'включена' : 'выключена'}',
+      label: context.l10n.translate('Категория {label}: {state}', {
+        'label': context.l10n.translate(label),
+        'state': context.l10n.translate(selected ? 'включена' : 'выключена'),
+      }),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(13),
@@ -3959,7 +4147,7 @@ class _LegendItem extends StatelessWidget {
                   fontWeight: FontWeight.w800,
                   color: selected ? color : onSurface,
                 ),
-                child: Text(label),
+                child: LocalizedText(label),
               ),
             ],
           ),
@@ -3999,7 +4187,7 @@ class _FilterCategoryChip extends StatelessWidget {
           color: selected ? color : scheme.onSurfaceVariant,
         ),
       ),
-      label: Text(label),
+      label: LocalizedText(label),
       labelStyle: TextStyle(
         fontWeight: FontWeight.w800,
         color: selected ? color : scheme.onSurface,
@@ -4063,9 +4251,14 @@ class _PlaceClusterMarker extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: '$count мест рядом. Нажмите, чтобы приблизить',
+      label: context.l10n.translate(
+        '{count} мест рядом. Нажмите, чтобы приблизить',
+        {'count': count},
+      ),
       child: Tooltip(
-        message: '$count мест рядом — приблизить',
+        message: context.l10n.translate('{count} мест рядом — приблизить', {
+          'count': count,
+        }),
         child: GestureDetector(
           onTap: onTap,
           child: Container(
@@ -4089,7 +4282,7 @@ class _PlaceClusterMarker extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(icon, color: Colors.white, size: 17),
-                Text(
+                LocalizedText(
                   '$count',
                   style: const TextStyle(
                     color: Colors.white,
@@ -4219,7 +4412,7 @@ class _PlaceMarker extends StatelessWidget {
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 2),
                   ),
-                  child: const Text(
+                  child: const LocalizedText(
                     '!',
                     style: TextStyle(
                       color: Colors.white,
@@ -4339,22 +4532,21 @@ class _MapDiscoveryControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    Widget divider() => Container(
-      width: 1,
-      height: 27,
-      color: scheme.outlineVariant,
-    );
+    Widget divider() =>
+        Container(width: 1, height: 27, color: scheme.outlineVariant);
     final buttons = <Widget>[
       _ZoomButton(
         icon: Icons.search_rounded,
-        tooltip: 'Поиск места',
+        tooltip: context.l10n.translate('Поиск места'),
         onPressed: onSearch,
         foregroundColor: AppPalette.aqua,
       ),
       divider(),
       _ZoomButton(
         icon: Icons.bolt_rounded,
-        tooltip: 'Нужно сейчас: туалет, вода или зарядка',
+        tooltip: context.l10n.translate(
+          'Нужно сейчас: туалет, вода или зарядка',
+        ),
         onPressed: onQuickNeeds,
         foregroundColor: const Color(0xFFF59E0B),
       ),
@@ -4363,7 +4555,9 @@ class _MapDiscoveryControl extends StatelessWidget {
         icon: favoritesCount > 0
             ? Icons.bookmark_rounded
             : Icons.bookmark_border_rounded,
-        tooltip: 'Избранное: $favoritesCount',
+        tooltip: context.l10n.translate('Избранное: {count}', {
+          'count': favoritesCount,
+        }),
         onPressed: onFavorites,
         foregroundColor: favoritesCount > 0
             ? AppPalette.pink
@@ -4402,13 +4596,13 @@ class _MapZoomControl extends StatelessWidget {
         children: [
           _ZoomButton(
             icon: Icons.add_rounded,
-            tooltip: 'Приблизить карту',
+            tooltip: context.l10n.translate('Приблизить карту'),
             onPressed: onZoomIn,
           ),
           Container(width: 27, height: 1, color: scheme.outlineVariant),
           _ZoomButton(
             icon: Icons.remove_rounded,
-            tooltip: 'Отдалить карту',
+            tooltip: context.l10n.translate('Отдалить карту'),
             onPressed: onZoomOut,
           ),
         ],
@@ -4466,7 +4660,7 @@ class _ZoomButton extends StatelessWidget {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     alignment: Alignment.center,
-                    child: Text(
+                    child: LocalizedText(
                       badgeCount > 99 ? '99+' : '$badgeCount',
                       style: const TextStyle(
                         color: Colors.white,
@@ -4582,7 +4776,7 @@ class _CategoryFilterIcon extends StatelessWidget {
                   border: Border.all(color: Colors.white, width: 1.5),
                 ),
                 alignment: Alignment.center,
-                child: Text(
+                child: LocalizedText(
                   '$count',
                   style: const TextStyle(
                     color: Colors.white,
@@ -4631,7 +4825,7 @@ class _MapCounter extends StatelessWidget {
                 scale: Tween<double>(begin: 0.92, end: 1).animate(animation),
                 child: FadeTransition(opacity: animation, child: child),
               ),
-              child: Text(
+              child: LocalizedText(
                 '$count • $label',
                 key: ValueKey('$count-$label'),
                 style: const TextStyle(
@@ -4825,7 +5019,7 @@ class _WeatherRetryChip extends StatelessWidget {
               else
                 const Icon(Icons.cloud_off_rounded, size: 20),
               const SizedBox(width: 8),
-              Text(
+              LocalizedText(
                 isRefreshing ? 'Обновляю погоду…' : 'Погода · повторить',
                 style: const TextStyle(
                   fontSize: 12.5,
@@ -4890,7 +5084,7 @@ class _WeatherChip extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
+                  LocalizedText(
                     '${weather.temperature.round()}° · ${weather.condition}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -4899,7 +5093,7 @@ class _WeatherChip extends StatelessWidget {
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  Text(
+                  LocalizedText(
                     weather.cityName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -4971,14 +5165,14 @@ class _WeatherDetailsSheet extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      LocalizedText(
                         weather.cityName,
                         style: const TextStyle(
                           fontSize: 21,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      Text(
+                      LocalizedText(
                         '${weather.temperature.round()}° · ${weather.condition}',
                         style: TextStyle(
                           color: theme.colorScheme.onSurfaceVariant,
@@ -4990,7 +5184,7 @@ class _WeatherDetailsSheet extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  tooltip: 'Обновить погоду',
+                  tooltip: context.l10n.translate('Обновить погоду'),
                   onPressed: isRefreshing ? null : onRefresh,
                   icon: isRefreshing
                       ? const SizedBox.square(
@@ -5023,7 +5217,7 @@ class _WeatherDetailsSheet extends StatelessWidget {
                     ),
                     const SizedBox(width: 9),
                     Expanded(
-                      child: Text(
+                      child: LocalizedText(
                         weather.pedestrianAdvice!,
                         style: const TextStyle(
                           fontSize: 13,
@@ -5065,7 +5259,7 @@ class _WeatherDetailsSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
-            Text(
+            LocalizedText(
               'Погода по центру карты · данные Open-Meteo',
               style: TextStyle(
                 color: theme.colorScheme.onSurfaceVariant,
@@ -5108,7 +5302,7 @@ class _WeatherMetric extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                LocalizedText(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -5118,7 +5312,7 @@ class _WeatherMetric extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                Text(
+                LocalizedText(
                   value,
                   style: const TextStyle(
                     fontSize: 14,
@@ -5144,7 +5338,9 @@ class _PedestrianAlertMarker extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: '${alert.type.label}: ${alert.type.description}',
+      label:
+          '${context.l10n.translate(alert.type.label)}: '
+          '${context.l10n.translate(alert.type.description)}',
       child: GestureDetector(
         onTap: onTap,
         child: Stack(
@@ -5217,7 +5413,7 @@ class _PedestrianAlertFormSheetState extends State<_PedestrianAlertFormSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            const LocalizedText(
               'Пешеходная обстановка',
               style: TextStyle(
                 fontSize: 23,
@@ -5226,7 +5422,7 @@ class _PedestrianAlertFormSheetState extends State<_PedestrianAlertFormSheet> {
               ),
             ),
             const SizedBox(height: 5),
-            Text(
+            LocalizedText(
               'Выбери, что происходит на этом участке. Данные временные и обновляются людьми рядом.',
               style: TextStyle(color: scheme.onSurfaceVariant, height: 1.35),
             ),
@@ -5245,7 +5441,7 @@ class _PedestrianAlertFormSheetState extends State<_PedestrianAlertFormSheet> {
                             : scheme.outlineVariant,
                       ),
                       avatar: Icon(type.icon, size: 18, color: type.color),
-                      label: Text(type.label),
+                      label: LocalizedText(type.label),
                       onSelected: (_) => setState(() => _selectedType = type),
                     ),
                   )
@@ -5267,7 +5463,7 @@ class _PedestrianAlertFormSheetState extends State<_PedestrianAlertFormSheet> {
                   Icon(_selectedType.icon, color: _selectedType.color),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
+                    child: LocalizedText(
                       _selectedType.description,
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
@@ -5284,10 +5480,14 @@ class _PedestrianAlertFormSheetState extends State<_PedestrianAlertFormSheet> {
               maxLength: 240,
               maxLines: 3,
               textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                labelText: 'Комментарий — необязательно',
-                hintText: 'Например: тропинка у моста полностью во льду',
-                prefixIcon: Icon(Icons.notes_rounded),
+              decoration: InputDecoration(
+                labelText: context.l10n.translate(
+                  'Комментарий — необязательно',
+                ),
+                hintText: context.l10n.translate(
+                  'Например: тропинка у моста полностью во льду',
+                ),
+                prefixIcon: const Icon(Icons.notes_rounded),
               ),
             ),
             const SizedBox(height: 6),
@@ -5299,7 +5499,7 @@ class _PedestrianAlertFormSheetState extends State<_PedestrianAlertFormSheet> {
                   color: AppPalette.muted,
                 ),
                 const SizedBox(width: 6),
-                Text(
+                LocalizedText(
                   '${widget.position.latitude.toStringAsFixed(5)}, '
                   '${widget.position.longitude.toStringAsFixed(5)}',
                   style: const TextStyle(
@@ -5328,7 +5528,7 @@ class _PedestrianAlertFormSheetState extends State<_PedestrianAlertFormSheet> {
                   );
                 },
                 icon: const Icon(Icons.campaign_rounded),
-                label: const Text('Опубликовать предупреждение'),
+                label: const LocalizedText('Опубликовать предупреждение'),
               ),
             ),
           ],
@@ -5384,14 +5584,14 @@ class _PedestrianAlertInfoSheet extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      LocalizedText(
                         alert.type.label,
                         style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      Text(
+                      LocalizedText(
                         _expiresLabel(),
                         style: TextStyle(
                           color: scheme.onSurfaceVariant,
@@ -5404,12 +5604,12 @@ class _PedestrianAlertInfoSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            Text(
+            LocalizedText(
               alert.description ?? alert.type.description,
               style: const TextStyle(fontSize: 15, height: 1.4),
             ),
             const SizedBox(height: 12),
-            Text(
+            LocalizedText(
               'Сообщил: ${alert.username}. Проверяй обстановку на месте — она может быстро измениться.',
               style: TextStyle(
                 color: scheme.onSurfaceVariant,
@@ -5470,7 +5670,7 @@ class _RoutePanel extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      LocalizedText(
                         distance,
                         style: const TextStyle(
                           fontSize: 18,
@@ -5478,7 +5678,7 @@ class _RoutePanel extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(
+                      LocalizedText(
                         'Пешком · $duration',
                         style: TextStyle(
                           fontSize: 13,
@@ -5520,7 +5720,7 @@ class _RoutePanel extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
+                      child: LocalizedText(
                         alerts.length == 1
                             ? '${alerts.first.type.label} рядом с маршрутом'
                             : '${alerts.length} предупреждения рядом с маршрутом',
@@ -5600,7 +5800,7 @@ class _QuickNeedsSheet extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      LocalizedText(
                         'Нужно сейчас',
                         style: TextStyle(
                           color: scheme.onSurface,
@@ -5609,7 +5809,7 @@ class _QuickNeedsSheet extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(
+                      LocalizedText(
                         'Самые близкие полезные места',
                         style: TextStyle(
                           color: scheme.onSurfaceVariant,
@@ -5631,7 +5831,7 @@ class _QuickNeedsSheet extends StatelessWidget {
                   color: scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Text(
+                child: LocalizedText(
                   'Рядом пока нет подтверждённых мест. Можно приблизить карту или добавить новую точку.',
                   style: TextStyle(
                     color: scheme.onSurfaceVariant,
@@ -5662,7 +5862,7 @@ class _QuickNeedsSheet extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
+                  child: LocalizedText(
                     'Показываем опубликованные точки. Для воды — только места, отмеченные как питьевые.',
                     style: TextStyle(
                       color: scheme.onSurfaceVariant,
@@ -5755,7 +5955,7 @@ class _QuickNeedCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    LocalizedText(
                       _title,
                       style: TextStyle(
                         color: _color,
@@ -5764,7 +5964,7 @@ class _QuickNeedCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
+                    LocalizedText(
                       PlaceInfo.titleOf(result.place),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -5775,7 +5975,7 @@ class _QuickNeedCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
+                    LocalizedText(
                       '$_detail · $distance · ${freshness.label}',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -5877,7 +6077,7 @@ class _CommunityReviewSheet extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        LocalizedText(
                           title,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
@@ -5887,7 +6087,7 @@ class _CommunityReviewSheet extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Text(
+                        LocalizedText(
                           '$kindLabel · $distance',
                           style: const TextStyle(
                             color: AppPalette.muted,
@@ -5911,7 +6111,7 @@ class _CommunityReviewSheet extends StatelessWidget {
                     color: const Color(0xFF0EA5E9).withValues(alpha: 0.22),
                   ),
                 ),
-                child: const Text(
+                child: const LocalizedText(
                   'Администратор не ответил за 24 часа. Заявка стала нейтральной: люди рядом могут проверить, существует ли это место. Для публикации нужны независимые подтверждения.',
                   style: TextStyle(fontWeight: FontWeight.w700, height: 1.35),
                 ),
@@ -5946,7 +6146,7 @@ class _CommunityReviewSheet extends StatelessWidget {
                     Icon(Icons.shield_outlined, color: Color(0xFFD97706)),
                     SizedBox(width: 9),
                     Expanded(
-                      child: Text(
+                      child: LocalizedText(
                         'Это твоя заявка. Чтобы проверка была честной, подтвердить её должен другой человек со своего телефона.',
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
@@ -5964,7 +6164,7 @@ class _CommunityReviewSheet extends StatelessWidget {
                         backgroundColor: const Color(0xFF16A34A),
                       ),
                       icon: const Icon(Icons.check_rounded),
-                      label: const Text('Место есть'),
+                      label: const LocalizedText('Место есть'),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -5972,7 +6172,7 @@ class _CommunityReviewSheet extends StatelessWidget {
                     child: OutlinedButton.icon(
                       onPressed: isOwnSubmission ? null : onReject,
                       icon: const Icon(Icons.close_rounded),
-                      label: const Text('Не нашёл'),
+                      label: const LocalizedText('Не нашёл'),
                     ),
                   ),
                 ],
@@ -5983,7 +6183,7 @@ class _CommunityReviewSheet extends StatelessWidget {
                 child: OutlinedButton.icon(
                   onPressed: onRoute,
                   icon: const Icon(Icons.directions_rounded),
-                  label: const Text('Построить маршрут для проверки'),
+                  label: const LocalizedText('Построить маршрут для проверки'),
                 ),
               ),
             ],
@@ -6020,7 +6220,7 @@ class _ReviewCountTile extends StatelessWidget {
           Icon(icon, color: color, size: 20),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
+            child: LocalizedText(
               '$label: $count',
               style: TextStyle(color: color, fontWeight: FontWeight.w800),
             ),
@@ -6237,7 +6437,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          LocalizedText(
                             title,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -6248,7 +6448,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Text(
+                          LocalizedText(
                             kindLabel,
                             style: const TextStyle(
                               color: Colors.grey,
@@ -6264,7 +6464,9 @@ class _ToiletInfoSheet extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     IconButton.filledTonal(
-                      tooltip: 'Скопировать ссылку на место',
+                      tooltip: context.l10n.translate(
+                        'Скопировать ссылку на место',
+                      ),
                       onPressed: onShare,
                       icon: const Icon(Icons.ios_share_rounded),
                     ),
@@ -6297,7 +6499,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                         ),
                         SizedBox(width: 10),
                         Expanded(
-                          child: Text(
+                          child: LocalizedText(
                             'Заявка отправлена. Пока точку видишь только ты на этом устройстве; после одобрения она появится у всех.',
                             style: TextStyle(
                               fontWeight: FontWeight.w800,
@@ -6464,7 +6666,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                         Icon(Icons.info_rounded, color: waterSafetyColor),
                         const SizedBox(width: 9),
                         Expanded(
-                          child: Text(
+                          child: LocalizedText(
                             drinkingWater == false
                                 ? 'Эта вода отмечена как непитьевая.'
                                 : 'Без подтверждения не пей воду прямо из источника.',
@@ -6500,7 +6702,7 @@ class _ToiletInfoSheet extends StatelessWidget {
 
                 const SizedBox(height: 18),
 
-                const Text(
+                const LocalizedText(
                   'Что есть на месте',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
                 ),
@@ -6571,7 +6773,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        LocalizedText(
                           hasActivePaperHelp
                               ? '🆘 Сейчас здесь нужна бумага'
                               : 'Нет бумаги? Попроси помощи рядом',
@@ -6581,7 +6783,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 5),
-                        Text(
+                        LocalizedText(
                           hasActivePaperHelp
                               ? 'Сигнал уже виден на карте и сам исчезнет через 45 минут.'
                               : 'TMaps отметит туалет красным значком на 45 минут. Не используй эту кнопку для экстренных ситуаций.',
@@ -6601,7 +6803,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                               backgroundColor: const Color(0xFFDC2626),
                             ),
                             icon: const Icon(Icons.sos_rounded),
-                            label: Text(
+                            label: LocalizedText(
                               hasActivePaperHelp
                                   ? 'Сигнал помощи активен'
                                   : '🆘 Нужна бумага',
@@ -6633,7 +6835,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                               color: Colors.grey.shade700,
                             ),
                             const SizedBox(width: 8),
-                            Text(
+                            LocalizedText(
                               reportCount > 0
                                   ? 'Последний отзыв'
                                   : 'Комментарий',
@@ -6645,7 +6847,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 9),
-                        Text(
+                        LocalizedText(
                           comment,
                           style: TextStyle(
                             fontSize: 14.5,
@@ -6661,7 +6863,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                 if (!isPending) ...[
                   const SizedBox(height: 20),
 
-                  const Text(
+                  const LocalizedText(
                     'Точка актуальна?',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
                   ),
@@ -6674,7 +6876,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                               ? null
                               : () => onVote(true),
                           icon: const Icon(Icons.thumb_up_alt_rounded),
-                          label: Text('Да · $likes'),
+                          label: LocalizedText('Да · $likes'),
                           style: FilledButton.styleFrom(
                             foregroundColor: const Color(0xFF15803D),
                             backgroundColor: const Color(0xFFDCFCE7),
@@ -6688,7 +6890,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                               ? null
                               : () => onVote(false),
                           icon: const Icon(Icons.report_problem_rounded),
-                          label: Text('Нет на месте · $dislikes'),
+                          label: LocalizedText('Нет на месте · $dislikes'),
                           style: FilledButton.styleFrom(
                             foregroundColor: const Color(0xFFB45309),
                             backgroundColor: const Color(0xFFFFF7ED),
@@ -6705,7 +6907,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                       child: OutlinedButton.icon(
                         onPressed: isSubmittingReport ? null : onReport,
                         icon: const Icon(Icons.rate_review_outlined),
-                        label: Text(
+                        label: LocalizedText(
                           reportCount == 0
                               ? 'Обновить информацию или оставить отзыв'
                               : 'Отзывы и обновления: $reportCount · Добавить',
@@ -6719,7 +6921,9 @@ class _ToiletInfoSheet extends StatelessWidget {
                     child: OutlinedButton.icon(
                       onPressed: isSubmittingLocationCorrection ? null : onMove,
                       icon: const Icon(Icons.edit_location_alt_rounded),
-                      label: const Text('Исправить положение на карте'),
+                      label: const LocalizedText(
+                        'Исправить положение на карте',
+                      ),
                     ),
                   ),
                 ],
@@ -6740,7 +6944,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                             ),
                           )
                         : const Icon(Icons.directions_walk_rounded),
-                    label: Text(
+                    label: LocalizedText(
                       isBuildingRoute
                           ? 'Строим маршрут...'
                           : 'Пешком по дорожкам',
@@ -6778,7 +6982,9 @@ class _FavoriteButtonState extends State<_FavoriteButton> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return IconButton.filledTonal(
-      tooltip: _isFavorite ? 'Убрать из избранного' : 'Сохранить место',
+      tooltip: context.l10n.translate(
+        _isFavorite ? 'Убрать из избранного' : 'Сохранить место',
+      ),
       style: IconButton.styleFrom(
         backgroundColor: _isFavorite
             ? AppPalette.pink.withValues(alpha: 0.13)
@@ -6855,7 +7061,7 @@ class _InfoCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                LocalizedText(
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -6866,7 +7072,7 @@ class _InfoCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
+                LocalizedText(
                   value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -6920,7 +7126,7 @@ class _AmenityStatusChip extends StatelessWidget {
         children: [
           Icon(icon, size: 17, color: color),
           const SizedBox(width: 6),
-          Text(
+          LocalizedText(
             '$label: $status',
             style: TextStyle(
               color: color,
@@ -6962,12 +7168,15 @@ class _InstallStep extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                LocalizedText(
                   title,
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 4),
-                Text(text, style: TextStyle(color: Colors.grey.shade700)),
+                LocalizedText(
+                  text,
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
               ],
             ),
           ),
@@ -7090,7 +7299,10 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
     final issue = ContentGuard.validateComment(commentController.text);
     if (issue != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(behavior: SnackBarBehavior.floating, content: Text(issue)),
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: LocalizedText(issue),
+        ),
       );
       return;
     }
@@ -7140,12 +7352,12 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
                   ),
                 ),
                 const SizedBox(height: 18),
-                const Text(
+                const LocalizedText(
                   'Обновить информацию',
                   style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 4),
-                Text(
+                LocalizedText(
                   widget.title,
                   style: TextStyle(color: Colors.grey.shade700),
                 ),
@@ -7175,14 +7387,16 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   initialValue: condition,
-                  decoration: const InputDecoration(
-                    labelText: 'Состояние',
-                    prefixIcon: Icon(Icons.health_and_safety_outlined),
+                  decoration: InputDecoration(
+                    labelText: context.l10n.translate('Состояние'),
+                    prefixIcon: const Icon(Icons.health_and_safety_outlined),
                   ),
                   items: conditions
                       .map(
-                        (value) =>
-                            DropdownMenuItem(value: value, child: Text(value)),
+                        (value) => DropdownMenuItem(
+                          value: value,
+                          child: LocalizedText(value),
+                        ),
                       )
                       .toList(),
                   onChanged: (value) {
@@ -7192,25 +7406,31 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   initialValue: accessType,
-                  decoration: const InputDecoration(
-                    labelText: 'Кому можно зайти',
-                    prefixIcon: Icon(Icons.door_front_door_outlined),
+                  decoration: InputDecoration(
+                    labelText: context.l10n.translate('Кому можно зайти'),
+                    prefixIcon: const Icon(Icons.door_front_door_outlined),
                   ),
                   items: const [
-                    DropdownMenuItem(value: 'public', child: Text('Всем')),
+                    DropdownMenuItem(
+                      value: 'public',
+                      child: LocalizedText('Всем'),
+                    ),
                     DropdownMenuItem(
                       value: 'customers',
-                      child: Text('Только клиентам'),
+                      child: LocalizedText('Только клиентам'),
                     ),
                     DropdownMenuItem(
                       value: 'permissive',
-                      child: Text('Обычно пускают'),
+                      child: LocalizedText('Обычно пускают'),
                     ),
                     DropdownMenuItem(
                       value: 'destination',
-                      child: Text('Только посетителям'),
+                      child: LocalizedText('Только посетителям'),
                     ),
-                    DropdownMenuItem(value: 'unknown', child: Text('Не знаю')),
+                    DropdownMenuItem(
+                      value: 'unknown',
+                      child: LocalizedText('Не знаю'),
+                    ),
                   ],
                   onChanged: (value) {
                     if (value != null) setState(() => accessType = value);
@@ -7233,19 +7453,22 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
                         : isFree!
                         ? 'free'
                         : 'paid',
-                    decoration: const InputDecoration(
-                      labelText: 'Стоимость туалета',
-                      prefixIcon: Icon(Icons.payments_outlined),
+                    decoration: InputDecoration(
+                      labelText: context.l10n.translate('Стоимость туалета'),
+                      prefixIcon: const Icon(Icons.payments_outlined),
                     ),
                     items: const [
                       DropdownMenuItem(
                         value: 'free',
-                        child: Text('Бесплатный'),
+                        child: LocalizedText('Бесплатный'),
                       ),
-                      DropdownMenuItem(value: 'paid', child: Text('Платный')),
+                      DropdownMenuItem(
+                        value: 'paid',
+                        child: LocalizedText('Платный'),
+                      ),
                       DropdownMenuItem(
                         value: 'unknown',
-                        child: Text('Не знаю'),
+                        child: LocalizedText('Не знаю'),
                       ),
                     ],
                     onChanged: (selection) {
@@ -7295,13 +7518,15 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
                   controller: commentController,
                   maxLength: 300,
                   maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'Отзыв или уточнение',
-                    hintText: 'Например: бумага есть, вход со двора',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.translate('Отзыв или уточнение'),
+                    hintText: context.l10n.translate(
+                      'Например: бумага есть, вход со двора',
+                    ),
                     alignLabelWithHint: true,
                   ),
                 ),
-                Text(
+                LocalizedText(
                   'Обновление будет видно всем пользователям TMaps.',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
@@ -7311,7 +7536,7 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
                   child: FilledButton.icon(
                     onPressed: submit,
                     icon: const Icon(Icons.check_rounded),
-                    label: const Text('Опубликовать обновление'),
+                    label: const LocalizedText('Опубликовать обновление'),
                   ),
                 ),
               ],
@@ -7345,11 +7570,14 @@ class _TriStateField extends StatelessWidget {
           : value!
           ? 'yes'
           : 'no',
-      decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)),
+      decoration: InputDecoration(
+        labelText: context.l10n.translate(label),
+        prefixIcon: Icon(icon),
+      ),
       items: const [
-        DropdownMenuItem(value: 'yes', child: Text('Есть')),
-        DropdownMenuItem(value: 'no', child: Text('Нет')),
-        DropdownMenuItem(value: 'unknown', child: Text('Не знаю')),
+        DropdownMenuItem(value: 'yes', child: LocalizedText('Есть')),
+        DropdownMenuItem(value: 'no', child: LocalizedText('Нет')),
+        DropdownMenuItem(value: 'unknown', child: LocalizedText('Не знаю')),
       ],
       onChanged: (selection) {
         onChanged(switch (selection) {
@@ -7402,7 +7630,7 @@ class _SubmissionHistorySheet extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        LocalizedText(
                           'Мои заявки',
                           style: TextStyle(
                             fontSize: 23,
@@ -7410,7 +7638,7 @@ class _SubmissionHistorySheet extends StatelessWidget {
                           ),
                         ),
                         SizedBox(height: 3),
-                        Text(
+                        LocalizedText(
                           'Точки, отправленные с этого устройства',
                           style: TextStyle(color: AppPalette.muted),
                         ),
@@ -7432,7 +7660,7 @@ class _SubmissionHistorySheet extends StatelessWidget {
                     Icon(Icons.info_outline_rounded, color: Color(0xFFD97706)),
                     SizedBox(width: 10),
                     Expanded(
-                      child: Text(
+                      child: LocalizedText(
                         'Сначала заявку видишь только ты. Через 24 часа без ответа она станет нейтральной и появится у людей рядом для проверки.',
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
@@ -7461,7 +7689,7 @@ class _SubmissionHistorySheet extends StatelessWidget {
                         color: AppPalette.muted,
                       ),
                       SizedBox(height: 10),
-                      Text(
+                      LocalizedText(
                         'Пока заявок нет',
                         style: TextStyle(
                           fontSize: 17,
@@ -7469,7 +7697,7 @@ class _SubmissionHistorySheet extends StatelessWidget {
                         ),
                       ),
                       SizedBox(height: 5),
-                      Text(
+                      LocalizedText(
                         'Нажми зелёный плюс, выбери точку и отправь её на проверку.',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: AppPalette.muted),
@@ -7547,7 +7775,7 @@ class _SubmissionHistorySheet extends StatelessWidget {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
+                                    LocalizedText(
                                       '$categoryTitle #${submission.id}',
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -7557,7 +7785,7 @@ class _SubmissionHistorySheet extends StatelessWidget {
                                       ),
                                     ),
                                     const SizedBox(height: 4),
-                                    Text(
+                                    LocalizedText(
                                       '$statusLabel · '
                                       '${date.day.toString().padLeft(2, '0')}.'
                                       '${date.month.toString().padLeft(2, '0')}.'
@@ -7569,7 +7797,7 @@ class _SubmissionHistorySheet extends StatelessWidget {
                                       ),
                                     ),
                                     const SizedBox(height: 3),
-                                    Text(
+                                    LocalizedText(
                                       '${submission.latitude.toStringAsFixed(5)}, '
                                       '${submission.longitude.toStringAsFixed(5)}',
                                       style: const TextStyle(
@@ -7751,7 +7979,7 @@ class _AddPlaceSheet extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        LocalizedText(
                           'Отправить место',
                           style: const TextStyle(
                             fontSize: 23,
@@ -7759,7 +7987,7 @@ class _AddPlaceSheet extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 3),
-                        Text(
+                        LocalizedText(
                           '$placeTitle • '
                           '${position.latitude.toStringAsFixed(5)}, '
                           '${position.longitude.toStringAsFixed(5)}',
@@ -7795,7 +8023,7 @@ class _AddPlaceSheet extends StatelessWidget {
                       Icon(Icons.touch_app_rounded, color: Color(0xFFEA580C)),
                       SizedBox(width: 10),
                       Expanded(
-                        child: Text(
+                        child: LocalizedText(
                           'Нажми, что именно ты добавляешь. Так кафе не попадёт в туалеты.',
                           style: TextStyle(fontWeight: FontWeight.w700),
                         ),
@@ -7876,14 +8104,18 @@ class _AddPlaceSheet extends StatelessWidget {
                     initialValue: placeName,
                     onChanged: onPlaceNameChanged,
                     decoration: InputDecoration(
-                      labelText: placeKind == PlaceKind.water
-                          ? 'Название или тип точки'
-                          : 'Название места',
-                      hintText: placeKind == PlaceKind.cafe
-                          ? 'Например: Кофейня у парка'
-                          : placeKind == PlaceKind.organization
-                          ? 'Например: Библиотека'
-                          : 'Как называется это место?',
+                      labelText: context.l10n.translate(
+                        placeKind == PlaceKind.water
+                            ? 'Название или тип точки'
+                            : 'Название места',
+                      ),
+                      hintText: context.l10n.translate(
+                        placeKind == PlaceKind.cafe
+                            ? 'Например: Кофейня у парка'
+                            : placeKind == PlaceKind.organization
+                            ? 'Например: Библиотека'
+                            : 'Как называется это место?',
+                      ),
                       prefixIcon: Icon(placeIcon),
                     ),
                   ),
@@ -7927,7 +8159,7 @@ class _AddPlaceSheet extends StatelessWidget {
                   ),
                   if (outdoorToilet) ...[
                     const SizedBox(height: 9),
-                    const Text(
+                    const LocalizedText(
                       'Шаблон поставит 3 звезды, плохое состояние, отсутствие бумаги и мыла. Всё можно изменить ниже.',
                       style: TextStyle(
                         color: AppPalette.muted,
@@ -8002,7 +8234,7 @@ class _AddPlaceSheet extends StatelessWidget {
                       ),
                       SizedBox(width: 9),
                       Expanded(
-                        child: Text(
+                        child: LocalizedText(
                           'Точка появится на карте после быстрой проверки.',
                           style: TextStyle(
                             fontSize: 12.5,
@@ -8055,15 +8287,15 @@ class _AddPlaceSheet extends StatelessWidget {
                   items: const [
                     DropdownMenuItem(
                       value: 'Хорошее',
-                      child: Text('🟢  Хорошее'),
+                      child: LocalizedText('🟢  Хорошее'),
                     ),
                     DropdownMenuItem(
                       value: 'Среднее',
-                      child: Text('🟡  Среднее'),
+                      child: LocalizedText('🟡  Среднее'),
                     ),
                     DropdownMenuItem(
                       value: 'Плохое',
-                      child: Text('🔴  Плохое'),
+                      child: LocalizedText('🔴  Плохое'),
                     ),
                   ],
                   onChanged: (value) {
@@ -8087,20 +8319,26 @@ class _AddPlaceSheet extends StatelessWidget {
                     prefixIcon: Icon(Icons.meeting_room_outlined),
                   ),
                   items: const [
-                    DropdownMenuItem(value: 'public', child: Text('Для всех')),
+                    DropdownMenuItem(
+                      value: 'public',
+                      child: LocalizedText('Для всех'),
+                    ),
                     DropdownMenuItem(
                       value: 'customers',
-                      child: Text('Только клиентам'),
+                      child: LocalizedText('Только клиентам'),
                     ),
                     DropdownMenuItem(
                       value: 'permissive',
-                      child: Text('Обычно пускают'),
+                      child: LocalizedText('Обычно пускают'),
                     ),
                     DropdownMenuItem(
                       value: 'destination',
-                      child: Text('Только посетителям'),
+                      child: LocalizedText('Только посетителям'),
                     ),
-                    DropdownMenuItem(value: 'unknown', child: Text('Не знаю')),
+                    DropdownMenuItem(
+                      value: 'unknown',
+                      child: LocalizedText('Не знаю'),
+                    ),
                   ],
                   onChanged: (value) {
                     if (value != null) onAccessTypeChanged(value);
@@ -8159,9 +8397,11 @@ class _AddPlaceSheet extends StatelessWidget {
                   maxLength: 300,
                   onChanged: onCommentChanged,
                   decoration: InputDecoration(
-                    hintText: isToilet
-                        ? 'Например: находится внутри ТЦ'
-                        : 'Например: розетка у стойки, работает круглосуточно',
+                    hintText: context.l10n.translate(
+                      isToilet
+                          ? 'Например: находится внутри ТЦ'
+                          : 'Например: розетка у стойки, работает круглосуточно',
+                    ),
                     alignLabelWithHint: true,
                     prefixIcon: const Padding(
                       padding: EdgeInsets.only(bottom: 55),
@@ -8184,7 +8424,7 @@ class _AddPlaceSheet extends StatelessWidget {
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      child: const Text('Отмена'),
+                      child: const LocalizedText('Отмена'),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -8193,7 +8433,7 @@ class _AddPlaceSheet extends StatelessWidget {
                     child: FilledButton.icon(
                       onPressed: categoryChosen ? onAdd : null,
                       icon: const Icon(Icons.send_rounded),
-                      label: const Text('Отправить на проверку'),
+                      label: const LocalizedText('Отправить на проверку'),
                     ),
                   ),
                 ],
@@ -8222,7 +8462,7 @@ class _SectionTitle extends StatelessWidget {
       children: [
         Icon(icon, size: 20, color: const Color(0xFF15803D)),
         const SizedBox(width: 8),
-        Text(
+        LocalizedText(
           title,
           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
         ),
@@ -8281,7 +8521,7 @@ class _ChoiceButton extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Flexible(
-              child: Text(
+              child: LocalizedText(
                 text,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
