@@ -40,6 +40,7 @@ import 'services/route_service.dart';
 import 'services/submission_history_service.dart';
 import 'services/theme_preference_service.dart';
 import 'services/weather_service.dart';
+import 'services/weather_controller.dart';
 import 'widgets/map_overlays.dart';
 import 'widgets/location_help_sheet.dart';
 import 'widgets/place_search_sheet.dart';
@@ -190,6 +191,7 @@ class _HomePageState extends State<HomePage> {
       const SubmissionHistoryService();
   final LiveLocationService _locationService = LiveLocationService();
   final WeatherService _weatherService = WeatherService();
+  late final WeatherController _weatherController;
 
   late final ToiletRepository _toiletRepository;
   StreamSubscription<Position>? _locationSubscription;
@@ -212,9 +214,9 @@ class _HomePageState extends State<HomePage> {
   final List<Map<String, dynamic>> toilets = [];
   List<PedestrianAlert> _pedestrianAlerts = const [];
   List<PedestrianAlert> _routePedestrianAlerts = const [];
-  WeatherSnapshot? _weather;
-  bool _isLoadingWeather = false;
-  bool _weatherLoadFailed = false;
+  WeatherSnapshot? get _weather => _weatherController.weather;
+  bool get _isLoadingWeather => _weatherController.isLoading;
+  bool get _weatherLoadFailed => _weatherController.hasError;
   List<TrackedSubmission> _submissionHistory = const [];
   Set<String> _favoritePlaceKeys = const {};
 
@@ -417,6 +419,9 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
 
+    _weatherController = WeatherController(fetch: _weatherService.fetch)
+      ..addListener(_onWeatherChanged);
+
     final communityBackend = AppConfig.usesCommunityApi
         ? HttpCommunityBackend(baseUrl: AppConfig.communityApiBaseUrl)
         : SupabaseCommunityBackend(Supabase.instance.client);
@@ -438,6 +443,7 @@ class _HomePageState extends State<HomePage> {
     _weatherUpdateTimer?.cancel();
     unawaited(_locationSubscription?.cancel());
     unawaited(_locationService.dispose());
+    _weatherController.dispose();
     _weatherService.dispose();
     super.dispose();
   }
@@ -725,9 +731,6 @@ class _HomePageState extends State<HomePage> {
     if (center || _followUser) {
       _mapController.move(point, max(_mapZoom, 16));
     }
-    if (center || _followUser || _weather == null) {
-      _scheduleWeather(point);
-    }
   }
 
   void _scheduleWeather(LatLng position) {
@@ -738,35 +741,12 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Future<void> _loadWeatherFor(LatLng position, {bool force = false}) async {
-    final existing = _weather;
-    if (!force && existing != null) {
-      const distance = Distance();
-      final isNearby = distance(existing.position, position) < 15000;
-      final isFresh =
-          DateTime.now().difference(existing.updatedAt) <
-          const Duration(minutes: 15);
-      if (isNearby && isFresh) return;
-    }
-    if (_isLoadingWeather) return;
-
-    if (mounted) {
-      setState(() {
-        _isLoadingWeather = true;
-        _weatherLoadFailed = false;
-      });
-    }
-    try {
-      final weather = await _weatherService.fetch(position);
-      if (!mounted) return;
-      setState(() => _weather = weather);
-    } catch (_) {
-      // Карта должна работать, даже если погодный сервис временно не отвечает.
-      if (mounted) setState(() => _weatherLoadFailed = true);
-    } finally {
-      if (mounted) setState(() => _isLoadingWeather = false);
-    }
+  void _onWeatherChanged() {
+    if (mounted) setState(() {});
   }
+
+  Future<void> _loadWeatherFor(LatLng position, {bool force = false}) =>
+      _weatherController.load(position, force: force);
 
   Future<void> _showWeatherDetails() async {
     final weather = _weather;
@@ -775,11 +755,15 @@ class _HomePageState extends State<HomePage> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => _WeatherDetailsSheet(
-        weather: weather,
-        isRefreshing: _isLoadingWeather,
-        onRefresh: () =>
-            _loadWeatherFor(_mapController.camera.center, force: true),
+      builder: (_) => AnimatedBuilder(
+        animation: _weatherController,
+        builder: (_, _) => _WeatherDetailsSheet(
+          weather: _weather ?? weather,
+          isRefreshing: _isLoadingWeather,
+          hasError: _weatherLoadFailed,
+          onRefresh: () =>
+              _loadWeatherFor(_mapController.camera.center, force: true),
+        ),
       ),
     );
   }
@@ -2613,7 +2597,7 @@ class _HomePageState extends State<HomePage> {
     if (hasGesture && _followUser) {
       _followUser = false;
     }
-    if (hasGesture) _scheduleWeather(camera.center);
+    _scheduleWeather(camera.center);
 
     if (_isPickingLocation) {
       setState(() {
@@ -2869,6 +2853,7 @@ class _HomePageState extends State<HomePage> {
           ),
 
           if (!_isPickingLocation &&
+              !_weatherLoadFailed &&
               _weather != null &&
               (_weather!.isRainy || _weather!.isSnowy))
             Positioned.fill(
@@ -2912,7 +2897,7 @@ class _HomePageState extends State<HomePage> {
                   padding: const EdgeInsets.fromLTRB(16, 146, 0, 0),
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: _weather == null
+                    child: _weather == null || _weatherLoadFailed
                         ? _WeatherRetryChip(
                             isRefreshing: _isLoadingWeather,
                             onTap: () => unawaited(
@@ -5118,11 +5103,13 @@ class _WeatherDetailsSheet extends StatelessWidget {
   const _WeatherDetailsSheet({
     required this.weather,
     required this.isRefreshing,
+    required this.hasError,
     required this.onRefresh,
   });
 
   final WeatherSnapshot weather;
   final bool isRefreshing;
+  final bool hasError;
   final Future<void> Function() onRefresh;
 
   @override
@@ -5197,7 +5184,14 @@ class _WeatherDetailsSheet extends StatelessWidget {
                 ),
               ],
             ),
-            if (weather.hasPedestrianWeatherWarning) ...[
+            if (hasError) ...[
+              const SizedBox(height: 14),
+              LocalizedText(
+                'Погода временно недоступна',
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+            ],
+            if (!hasError && weather.hasPedestrianWeatherWarning) ...[
               const SizedBox(height: 14),
               Container(
                 width: double.infinity,
