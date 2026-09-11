@@ -175,7 +175,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   static const Color green = Color(0xFF16A34A);
   static const double _initialMapZoom = 15.8;
   static const double _minMapZoom = 5.4;
@@ -195,6 +195,11 @@ class _HomePageState extends State<HomePage> {
 
   late final ToiletRepository _toiletRepository;
   StreamSubscription<Position>? _locationSubscription;
+  StreamSubscription<LocationAccessState>? _locationStateSubscription;
+  DateTime? _lastLocationTimestamp;
+  int _locationRequests = 0;
+  bool _isCenteringOnUser = false;
+  bool _isLocationHelpOpen = false;
   Timer? _cameraUpdateTimer;
   Timer? _weatherUpdateTimer;
 
@@ -428,6 +433,10 @@ class _HomePageState extends State<HomePage> {
     _toiletRepository = ToiletRepository(communityBackend);
 
     _locationSubscription = _locationService.positions.listen(_applyPosition);
+    _locationStateSubscription = _locationService.states.listen((state) {
+      if (mounted) setState(() => _locationState = state);
+    });
+    WidgetsBinding.instance.addObserver(this);
 
     loadUsername();
     unawaited(_loadMapBaseStyle());
@@ -439,13 +448,24 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _cameraUpdateTimer?.cancel();
     _weatherUpdateTimer?.cancel();
     unawaited(_locationSubscription?.cancel());
+    unawaited(_locationStateSubscription?.cancel());
     unawaited(_locationService.dispose());
     _weatherController.dispose();
     _weatherService.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Browsers can suspend a position watch while the phone is locked.
+      // Recheck it on return without prompting again after a denied permission.
+      unawaited(_startLocation(requestPermission: false));
+    }
   }
 
   // =========================================================
@@ -704,27 +724,40 @@ class _HomePageState extends State<HomePage> {
     required bool requestPermission,
     bool center = false,
   }) async {
-    final result = await _locationService.start(
-      requestPermission: requestPermission,
-    );
     if (!mounted) return false;
+    setState(() => _locationRequests++);
+    try {
+      final result = await _locationService.start(
+        requestPermission: requestPermission,
+      );
+      if (!mounted) return false;
 
-    setState(() => _locationState = result.state);
-    if (result.position != null) {
-      _applyPosition(result.position!, center: center);
+      setState(() => _locationState = _locationService.state);
+      if (_locationState == LocationAccessState.ready &&
+          result.position != null) {
+        _applyPosition(result.position!, center: center);
+      }
+      return _locationState == LocationAccessState.ready &&
+          result.position != null;
+    } finally {
+      if (mounted) setState(() => _locationRequests--);
     }
-    return result.state == LocationAccessState.ready && result.position != null;
   }
 
   void _applyPosition(Position position, {bool center = false}) {
     if (!mounted) return;
+    if (_lastLocationTimestamp != null &&
+        position.timestamp.isBefore(_lastLocationTimestamp!)) {
+      if (center) _mapController.move(currentPosition, max(_mapZoom, 16));
+      return;
+    }
+    _lastLocationTimestamp = position.timestamp;
     final point = LatLng(position.latitude, position.longitude);
 
     setState(() {
       currentPosition = point;
       _locationAccuracy = position.accuracy;
       _locationHeading = position.heading.isFinite ? position.heading : 0;
-      _locationState = LocationAccessState.ready;
       if (routePoints.length >= 2) routePoints[0] = point;
     });
 
@@ -769,11 +802,18 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> centerOnUser() async {
+    if (!mounted || _isCenteringOnUser) return;
+    _isCenteringOnUser = true;
     setState(() => _followUser = true);
-    final locationFound = await _startLocation(
-      requestPermission: true,
-      center: true,
-    );
+    bool locationFound;
+    try {
+      locationFound = await _startLocation(
+        requestPermission: true,
+        center: true,
+      );
+    } finally {
+      if (mounted) setState(() => _isCenteringOnUser = false);
+    }
     if (!mounted || locationFound) return;
 
     setState(() => _followUser = false);
@@ -781,20 +821,25 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _presentLocationHelp({VoidCallback? onRetry}) async {
-    if (!mounted) return;
+    if (!mounted || _isLocationHelpOpen) return;
 
     if (kIsWeb || _locationState == LocationAccessState.deniedForever) {
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => LocationHelpSheet(
-          isWeb: kIsWeb,
-          permissionBlocked:
-              _locationState == LocationAccessState.deniedForever,
-          onRetry: onRetry ?? centerOnUser,
-        ),
-      );
+      _isLocationHelpOpen = true;
+      try {
+        await showModalBottomSheet<void>(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => LocationHelpSheet(
+            isWeb: kIsWeb,
+            permissionBlocked:
+                _locationState == LocationAccessState.deniedForever,
+            onRetry: onRetry ?? centerOnUser,
+          ),
+        );
+      } finally {
+        _isLocationHelpOpen = false;
+      }
       return;
     }
 
@@ -3031,8 +3076,12 @@ class _HomePageState extends State<HomePage> {
                     SizedBox(height: mapControlGap),
                     _MapActionButton(
                       icon: Icons.navigation_rounded,
-                      onPressed: centerOnUser,
-                      tooltip: context.l10n.translate('Моё местоположение'),
+                      onPressed: _isCenteringOnUser ? null : centerOnUser,
+                      tooltip: context.l10n.translate(
+                        _locationRequests > 0
+                            ? 'Определяем местоположение…'
+                            : 'Моё местоположение',
+                      ),
                       backgroundColor: _followUser
                           ? AppPalette.sky
                           : scheme.surface,
@@ -3040,6 +3089,21 @@ class _HomePageState extends State<HomePage> {
                           ? Colors.white
                           : scheme.onSurface,
                       size: mapActionSize,
+                      child: _locationRequests > 0
+                          ? SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: _followUser
+                                    ? Colors.white
+                                    : AppPalette.sky,
+                                semanticsLabel: context.l10n.translate(
+                                  'Определяем местоположение…',
+                                ),
+                              ),
+                            )
+                          : null,
                     ),
                     if (_submissionHistory.isNotEmpty) ...[
                       SizedBox(height: mapControlGap),
@@ -3133,6 +3197,7 @@ class _HomePageState extends State<HomePage> {
             ),
 
           if (!_isPickingLocation &&
+              _locationRequests == 0 &&
               _locationState != LocationAccessState.ready)
             Positioned(
               left: 16,
@@ -3144,7 +3209,7 @@ class _HomePageState extends State<HomePage> {
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 520),
                     child: LocationPromptCard(
-                      title: 'GPS не включён',
+                      title: 'Проверь геопозицию',
                       message: _locationHelpMessage,
                       onEnable: centerOnUser,
                     ),
