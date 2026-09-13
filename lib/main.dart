@@ -37,6 +37,8 @@ import 'services/language_preference_service.dart';
 import 'services/map_style_preference_service.dart';
 import 'services/place_share_service.dart';
 import 'services/route_service.dart';
+import 'services/walking_route_controller.dart';
+import 'widgets/walking_route_panel.dart';
 import 'services/submission_history_service.dart';
 import 'services/theme_preference_service.dart';
 import 'services/weather_service.dart';
@@ -183,6 +185,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   final MapController _mapController = MapController();
   final RouteService _routeService = const RouteService();
+  late final WalkingRouteController _routeController;
   final FavoritesService _favoritesService = const FavoritesService();
   final MapStylePreferenceService _mapStylePreferenceService =
       const MapStylePreferenceService();
@@ -228,7 +231,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String? username;
 
   bool isAddingToilet = false;
-  bool isBuildingRoute = false;
+  bool _isPreparingRoute = false;
+  int _routeIntent = 0;
+  bool get isBuildingRoute => _isPreparingRoute || _routeController.isLoading;
+  bool get _hasRoutePanel =>
+      _isPreparingRoute || _routeController.destination != null;
   bool isFindingNearest = false;
   bool isOpeningQuickNeeds = false;
   bool isSubmittingReport = false;
@@ -253,10 +260,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       : _maxMapZoom;
   int _mapAnimationGeneration = 0;
 
-  List<LatLng> routePoints = [];
+  List<LatLng> get routePoints => _routeController.route?.points ?? const [];
 
-  double? routeDistance;
-  double? routeDuration;
+  double? get routeDistance => _routeController.route?.distance;
+  double? get routeDuration => _routeController.route?.duration;
 
   Map<String, dynamic> _submissionToPlace(TrackedSubmission submission) {
     final kind = submission.placeKind;
@@ -426,6 +433,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     _weatherController = WeatherController(fetch: _weatherService.fetch)
       ..addListener(_onWeatherChanged);
+    _routeController = WalkingRouteController(fetch: _routeService.build)
+      ..addListener(_onRouteChanged);
 
     final communityBackend = AppConfig.usesCommunityApi
         ? HttpCommunityBackend(baseUrl: AppConfig.communityApiBaseUrl)
@@ -435,6 +444,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _locationSubscription = _locationService.positions.listen(_applyPosition);
     _locationStateSubscription = _locationService.states.listen((state) {
       if (mounted) setState(() => _locationState = state);
+      _routeController.setLocationAvailable(state == LocationAccessState.ready);
     });
     WidgetsBinding.instance.addObserver(this);
 
@@ -455,6 +465,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     unawaited(_locationStateSubscription?.cancel());
     unawaited(_locationService.dispose());
     _weatherController.dispose();
+    _routeController.dispose();
     _weatherService.dispose();
     super.dispose();
   }
@@ -758,8 +769,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       currentPosition = point;
       _locationAccuracy = position.accuracy;
       _locationHeading = position.heading.isFinite ? position.heading : 0;
-      if (routePoints.length >= 2) routePoints[0] = point;
     });
+    _routeController.observePosition(
+      point,
+      accuracy: position.accuracy,
+      observedAt: position.timestamp,
+    );
 
     if (center || _followUser) {
       _mapController.move(point, max(_mapZoom, 16));
@@ -2482,44 +2497,32 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // =========================================================
 
   Future<void> buildRoute(Map<String, dynamic> toilet) async {
+    final intent = ++_routeIntent;
+    _routeController.clear();
+    setState(() => _isPreparingRoute = true);
     try {
-      setState(() {
-        isBuildingRoute = true;
-        routePoints = [];
-        routeDistance = null;
-        routeDuration = null;
-        _routePedestrianAlerts = const [];
-      });
-
       final locationFound = await _startLocation(requestPermission: true);
+      if (!mounted || intent != _routeIntent) return;
+      setState(() => _isPreparingRoute = false);
       if (!locationFound) {
-        if (!mounted) return;
-        setState(() => isBuildingRoute = false);
         await _presentLocationHelp(
-          onRetry: () => unawaited(buildRoute(toilet)),
+          onRetry: () {
+            if (intent == _routeIntent) unawaited(buildRoute(toilet));
+          },
         );
         return;
       }
 
       final double toiletLat = (toilet['lat'] as num).toDouble();
       final double toiletLng = (toilet['lng'] as num).toDouble();
-      final result = await _routeService.build(
+      final built = await _routeController.build(
         from: currentPosition,
         to: LatLng(toiletLat, toiletLng),
+        accuracy: _locationAccuracy,
+        observedAt: _lastLocationTimestamp,
       );
 
-      if (!mounted) return;
-
-      setState(() {
-        routePoints = result.points;
-        routeDistance = result.distance;
-        routeDuration = result.duration;
-        _routePedestrianAlerts = PedestrianAlertPolicy.nearRoute(
-          _pedestrianAlerts,
-          result.points,
-        );
-        isBuildingRoute = false;
-      });
+      if (!mounted || intent != _routeIntent || !built) return;
 
       if (routePoints.isNotEmpty) {
         final bounds = LatLngBounds.fromPoints(routePoints);
@@ -2537,18 +2540,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             borderRadius: BorderRadius.circular(16),
           ),
           content: LocalizedText(
-            '🚶 Пеший маршрут по дорожкам — ${formatDistance(result.distance)}',
+            '🚶 Пеший маршрут по дорожкам — ${formatDistance(routeDistance!)}',
           ),
         ),
       );
     } catch (e) {
       debugPrint('Ошибка маршрута: $e');
 
-      if (!mounted) return;
-
-      setState(() {
-        isBuildingRoute = false;
-      });
+      if (!mounted || intent != _routeIntent) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -2558,10 +2557,39 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          content: LocalizedText('❌ Не удалось построить маршрут: $e'),
+          content: const LocalizedText('Не удалось построить маршрут'),
         ),
       );
+    } finally {
+      if (mounted && intent == _routeIntent) {
+        setState(() => _isPreparingRoute = false);
+      }
     }
+  }
+
+  void _onRouteChanged() {
+    if (!mounted) return;
+    setState(() {
+      _routePedestrianAlerts = PedestrianAlertPolicy.nearRoute(
+        _pedestrianAlerts,
+        routePoints,
+      );
+    });
+  }
+
+  Future<void> _retryRoute() async {
+    final intent = _routeIntent;
+    final found = await _startLocation(requestPermission: true);
+    if (!mounted || intent != _routeIntent) return;
+    if (!found) {
+      await _presentLocationHelp(
+        onRetry: () {
+          if (intent == _routeIntent) unawaited(_retryRoute());
+        },
+      );
+      return;
+    }
+    await _routeController.retry();
   }
 
   // =========================================================
@@ -2603,12 +2631,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // =========================================================
 
   void clearRoute() {
+    _routeIntent++;
     setState(() {
-      routePoints = [];
-      routeDistance = null;
-      routeDuration = null;
+      _isPreparingRoute = false;
       _routePedestrianAlerts = const [];
     });
+    _routeController.clear();
   }
 
   void _syncMapCamera() {
@@ -2780,7 +2808,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       strokeWidth: 8,
                       color: Colors.white,
                     ),
-                    Polyline(points: routePoints, strokeWidth: 5, color: green),
+                    Polyline(
+                      points: routePoints,
+                      strokeWidth: 5,
+                      color: _routeController.status == WalkingRouteStatus.ready
+                          ? green
+                          : const Color(0xFF64748B),
+                    ),
                   ],
                 ),
 
@@ -2996,7 +3030,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           if (!_isPickingLocation)
             Positioned(
               right: 16,
-              bottom: routePoints.length >= 2 ? 150 : 28,
+              bottom: _hasRoutePanel ? 180 : 28,
               child: SafeArea(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -3150,7 +3184,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           if (!_isPickingLocation && displayedPlaces.isNotEmpty)
             Positioned(
               left: 16,
-              bottom: routePoints.length >= 2 ? 150 : 28,
+              bottom: _hasRoutePanel ? 180 : 28,
               child: SafeArea(
                 child: _MapCounter(
                   count: displayedPlaces.length,
@@ -3162,20 +3196,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           // ===================================================
           // ПАНЕЛЬ МАРШРУТА
           // ===================================================
-          if (!_isPickingLocation &&
-              routePoints.length >= 2 &&
-              routeDistance != null &&
-              routeDuration != null)
+          if (!_isPickingLocation && _hasRoutePanel)
             Positioned(
               left: 12,
               right: 12,
               bottom: 12,
               child: SafeArea(
-                child: _RoutePanel(
-                  distance: formatDistance(routeDistance!),
-                  duration: formatDuration(routeDuration!),
+                child: WalkingRoutePanel(
+                  status: _isPreparingRoute
+                      ? WalkingRouteStatus.locating
+                      : _routeController.status,
+                  distance: routeDistance == null
+                      ? null
+                      : formatDistance(routeDistance!),
+                  duration: routeDuration == null
+                      ? null
+                      : formatDuration(routeDuration!),
                   alerts: _routePedestrianAlerts,
                   onClose: clearRoute,
+                  onRetry: isBuildingRoute || _locationRequests > 0
+                      ? null
+                      : () => unawaited(_retryRoute()),
                 ),
               ),
             ),
@@ -5678,124 +5719,6 @@ class _PedestrianAlertInfoSheet extends StatelessWidget {
                 height: 1.35,
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RoutePanel extends StatelessWidget {
-  final String distance;
-  final String duration;
-  final List<PedestrianAlert> alerts;
-  final VoidCallback onClose;
-
-  const _RoutePanel({
-    required this.distance,
-    required this.duration,
-    required this.alerts,
-    required this.onClose,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      elevation: 12,
-      color: Theme.of(context).colorScheme.surface,
-      borderRadius: BorderRadius.circular(22),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF22C55E), Color(0xFF15803D)],
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Icon(
-                    Icons.directions_walk_rounded,
-                    color: Colors.white,
-                    size: 27,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      LocalizedText(
-                        distance,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      LocalizedText(
-                        'Пешком · $duration',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade600,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  onPressed: onClose,
-                  style: IconButton.styleFrom(
-                    backgroundColor: const Color(0xFFF3F4F6),
-                  ),
-                  icon: const Icon(Icons.close_rounded),
-                ),
-              ],
-            ),
-            if (alerts.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 11,
-                  vertical: 9,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF7ED),
-                  borderRadius: BorderRadius.circular(13),
-                  border: Border.all(color: const Color(0xFFFED7AA)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.warning_amber_rounded,
-                      color: Color(0xFFEA580C),
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: LocalizedText(
-                        alerts.length == 1
-                            ? '${alerts.first.type.label} рядом с маршрутом'
-                            : '${alerts.length} предупреждения рядом с маршрутом',
-                        style: const TextStyle(
-                          color: Color(0xFF9A3412),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
           ],
         ),
       ),
