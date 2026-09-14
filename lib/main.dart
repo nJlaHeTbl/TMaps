@@ -39,6 +39,7 @@ import 'services/place_share_service.dart';
 import 'services/route_service.dart';
 import 'services/walking_route_controller.dart';
 import 'widgets/walking_route_panel.dart';
+import 'presentation/app_motion.dart';
 import 'services/submission_history_service.dart';
 import 'services/theme_preference_service.dart';
 import 'services/weather_service.dart';
@@ -131,6 +132,8 @@ class _TMapsAppState extends State<TMapsApp> {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: _themeMode,
+      themeAnimationDuration: AppMotion.duration(context),
+      themeAnimationCurve: Curves.easeOutCubic,
       locale: _selectedLocale,
       supportedLocales: AppLocalizations.supportedLocales,
       localizationsDelegates: const [
@@ -1202,6 +1205,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _animateMapTo(LatLng target, double zoom) async {
     final generation = ++_mapAnimationGeneration;
+    if (!AppMotion.enabled(context)) {
+      _mapController.move(target, zoom);
+      return;
+    }
     final camera = _mapController.camera;
     final startCenter = camera.center;
     final startZoom = camera.zoom;
@@ -2932,6 +2939,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ),
 
           if (!_isPickingLocation &&
+              AppMotion.enabled(context) &&
               !_weatherLoadFailed &&
               _weather != null &&
               (_weather!.isRainy || _weather!.isSnowy))
@@ -2950,14 +2958,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               child: SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                  child: _GlassHeader(
-                    username: username,
-                    summary: _mapSummary,
-                    onInstall: showInstallInstructions,
-                    themeMode: widget.themeMode,
-                    onThemeModeChanged: widget.onThemeModeChanged,
-                    language: widget.language,
-                    onLanguageChanged: widget.onLanguageChanged,
+                  child: MotionEntrance(
+                    child: _GlassHeader(
+                      username: username,
+                      summary: _mapSummary,
+                      onInstall: showInstallInstructions,
+                      themeMode: widget.themeMode,
+                      onThemeModeChanged: widget.onThemeModeChanged,
+                      language: widget.language,
+                      onLanguageChanged: widget.onLanguageChanged,
+                    ),
                   ),
                 ),
               ),
@@ -3028,7 +3038,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           // КНОПКИ СПРАВА
           // ===================================================
           if (!_isPickingLocation)
-            Positioned(
+            AnimatedPositioned(
+              duration: AppMotion.duration(context, AppMotion.panel),
+              curve: Curves.easeOutCubic,
               right: 16,
               bottom: _hasRoutePanel ? 180 : 28,
               child: SafeArea(
@@ -3182,7 +3194,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           // СЧЕТЧИК ТУАЛЕТОВ
           // ===================================================
           if (!_isPickingLocation && displayedPlaces.isNotEmpty)
-            Positioned(
+            AnimatedPositioned(
+              duration: AppMotion.duration(context, AppMotion.panel),
+              curve: Curves.easeOutCubic,
               left: 16,
               bottom: _hasRoutePanel ? 180 : 28,
               child: SafeArea(
@@ -3196,48 +3210,58 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           // ===================================================
           // ПАНЕЛЬ МАРШРУТА
           // ===================================================
-          if (!_isPickingLocation && _hasRoutePanel)
+          if (!_isPickingLocation)
             Positioned(
               left: 12,
               right: 12,
               bottom: 12,
               child: SafeArea(
-                child: WalkingRoutePanel(
-                  status: _isPreparingRoute
-                      ? WalkingRouteStatus.locating
-                      : _routeController.status,
-                  distance: routeDistance == null
+                child: MotionSwitcher(
+                  alignment: Alignment.bottomCenter,
+                  duration: AppMotion.panel,
+                  child: !_hasRoutePanel
                       ? null
-                      : formatDistance(routeDistance!),
-                  duration: routeDuration == null
-                      ? null
-                      : formatDuration(routeDuration!),
-                  alerts: _routePedestrianAlerts,
-                  onClose: clearRoute,
-                  onRetry: isBuildingRoute || _locationRequests > 0
-                      ? null
-                      : () => unawaited(_retryRoute()),
+                      : WalkingRoutePanel(
+                          status: _isPreparingRoute
+                              ? WalkingRouteStatus.locating
+                              : _routeController.status,
+                          distance: routeDistance == null
+                              ? null
+                              : formatDistance(routeDistance!),
+                          duration: routeDuration == null
+                              ? null
+                              : formatDuration(routeDuration!),
+                          alerts: _routePedestrianAlerts,
+                          onClose: clearRoute,
+                          onRetry: isBuildingRoute || _locationRequests > 0
+                              ? null
+                              : () => unawaited(_retryRoute()),
+                        ),
                 ),
               ),
             ),
 
-          if (showZoomHint)
-            const Positioned(
-              left: 16,
-              right: 90,
-              bottom: 28,
-              child: SafeArea(child: MapZoomHint()),
-            ),
-
-          if (showEmptyAreaHint)
+          if (!_isPickingLocation)
             Positioned(
               left: 16,
               right: 90,
               bottom: 28,
-              child: SafeArea(child: MapEmptyHint(label: _mapScopeLabel)),
+              child: SafeArea(
+                child: MotionSwitcher(
+                  alignment: Alignment.bottomLeft,
+                  child: _hasRoutePanel
+                      ? null
+                      : showZoomHint
+                      ? const MapZoomHint()
+                      : showEmptyAreaHint
+                      ? MapEmptyHint(label: _mapScopeLabel)
+                      : null,
+                ),
+              ),
             ),
 
           if (!_isPickingLocation &&
+              !_hasRoutePanel &&
               _locationRequests == 0 &&
               _locationState != LocationAccessState.ready)
             Positioned(
@@ -3344,6 +3368,9 @@ class _StreetMapLayer extends StatelessWidget {
       child: TileLayer(
         key: const ValueKey('street-map-tiles'),
         urlTemplate: MapTilePolicy.streetUrl,
+        tileDisplay: AppMotion.enabled(context)
+            ? const TileDisplay.fadeIn(duration: AppMotion.quick)
+            : const TileDisplay.instantaneous(),
         userAgentPackageName: 'com.tmaps.app',
         keepBuffer: MapTilePolicy.keepBuffer,
         panBuffer: MapTilePolicy.panBuffer,
@@ -3368,9 +3395,9 @@ class _SatelliteMapLayer extends StatelessWidget {
       maxNativeZoom: MapTilePolicy.satelliteMaxNativeZoom,
       keepBuffer: MapTilePolicy.keepBuffer,
       panBuffer: MapTilePolicy.panBuffer,
-      tileDisplay: const TileDisplay.fadeIn(
-        duration: Duration(milliseconds: 180),
-      ),
+      tileDisplay: AppMotion.enabled(context)
+          ? const TileDisplay.fadeIn(duration: AppMotion.quick)
+          : const TileDisplay.instantaneous(),
       evictErrorTileStrategy: EvictErrorTileStrategy.notVisibleRespectMargin,
     );
 
@@ -3560,7 +3587,10 @@ class _MapStyleOptionCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
+          duration: AppMotion.duration(
+            context,
+            const Duration(milliseconds: 220),
+          ),
           curve: Curves.easeOutCubic,
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
@@ -3755,7 +3785,10 @@ class _GlassHeader extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
+                      duration: AppMotion.duration(
+                        context,
+                        const Duration(milliseconds: 220),
+                      ),
                       transitionBuilder: (child, animation) => FadeTransition(
                         opacity: animation,
                         child: SlideTransition(
@@ -4031,9 +4064,15 @@ class _MapLegendBarState extends State<_MapLegendBar> {
   Future<void> _scrollBy(double delta) async {
     if (!_scrollController.hasClients) return;
     final position = _scrollController.position;
+    if (!AppMotion.enabled(context)) {
+      _scrollController.jumpTo(
+        (position.pixels + delta).clamp(0, position.maxScrollExtent).toDouble(),
+      );
+      return;
+    }
     await _scrollController.animateTo(
       (position.pixels + delta).clamp(0, position.maxScrollExtent).toDouble(),
-      duration: const Duration(milliseconds: 280),
+      duration: AppMotion.duration(context, const Duration(milliseconds: 280)),
       curve: Curves.easeOutCubic,
     );
   }
@@ -4197,7 +4236,10 @@ class _LegendItem extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(13),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
+          duration: AppMotion.duration(
+            context,
+            const Duration(milliseconds: 180),
+          ),
           margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
           decoration: BoxDecoration(
@@ -4215,7 +4257,10 @@ class _LegendItem extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
+                duration: AppMotion.duration(
+                  context,
+                  const Duration(milliseconds: 180),
+                ),
                 curve: Curves.easeOutCubic,
                 width: 27,
                 height: 27,
@@ -4225,14 +4270,20 @@ class _LegendItem extends StatelessWidget {
                 ),
                 child: AnimatedScale(
                   scale: selected ? 1.12 : 1,
-                  duration: const Duration(milliseconds: 180),
+                  duration: AppMotion.duration(
+                    context,
+                    const Duration(milliseconds: 180),
+                  ),
                   curve: Curves.easeOutCubic,
                   child: Icon(icon, color: color, size: 17),
                 ),
               ),
               const SizedBox(width: 6),
               AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 180),
+                duration: AppMotion.duration(
+                  context,
+                  const Duration(milliseconds: 180),
+                ),
                 style: TextStyle(
                   fontSize: 11.5,
                   fontWeight: FontWeight.w800,
@@ -4271,7 +4322,10 @@ class _FilterCategoryChip extends StatelessWidget {
       onSelected: (_) => onSelected(),
       avatar: AnimatedScale(
         scale: selected ? 1.12 : 1,
-        duration: const Duration(milliseconds: 180),
+        duration: AppMotion.duration(
+          context,
+          const Duration(milliseconds: 180),
+        ),
         child: Icon(
           icon,
           size: 18,
@@ -4303,9 +4357,10 @@ class _AppearingPlaceMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!AppMotion.enabled(context)) return child;
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 260),
+      duration: AppMotion.duration(context, const Duration(milliseconds: 260)),
       curve: Curves.easeOutCubic,
       child: child,
       builder: (context, value, animatedChild) {
@@ -4838,7 +4893,10 @@ class _CategoryFilterIcon extends StatelessWidget {
       alignment: Alignment.center,
       children: [
         AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
+          duration: AppMotion.duration(
+            context,
+            const Duration(milliseconds: 220),
+          ),
           transitionBuilder: (child, animation) => ScaleTransition(
             scale: animation,
             child: FadeTransition(opacity: animation, child: child),
@@ -4856,7 +4914,10 @@ class _CategoryFilterIcon extends StatelessWidget {
             right: -15,
             child: AnimatedScale(
               scale: count > 1 ? 1 : 0,
-              duration: const Duration(milliseconds: 180),
+              duration: AppMotion.duration(
+                context,
+                const Duration(milliseconds: 180),
+              ),
               child: Container(
                 constraints: const BoxConstraints(minWidth: 18),
                 height: 18,
@@ -4911,7 +4972,10 @@ class _MapCounter extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
+              duration: AppMotion.duration(
+                context,
+                const Duration(milliseconds: 200),
+              ),
               transitionBuilder: (child, animation) => ScaleTransition(
                 scale: Tween<double>(begin: 0.92, end: 1).animate(animation),
                 child: FadeTransition(opacity: animation, child: child),
@@ -6993,7 +7057,10 @@ class _FavoriteButtonState extends State<_FavoriteButton> {
               child: CircularProgressIndicator(strokeWidth: 2.2),
             )
           : AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
+              duration: AppMotion.duration(
+                context,
+                const Duration(milliseconds: 180),
+              ),
               transitionBuilder: (child, animation) =>
                   ScaleTransition(scale: animation, child: child),
               child: Icon(
@@ -8480,7 +8547,10 @@ class _ChoiceButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
+        duration: AppMotion.duration(
+          context,
+          const Duration(milliseconds: 180),
+        ),
         padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 8),
         decoration: BoxDecoration(
           color: selected ? scheme.surface : Colors.transparent,

@@ -6,6 +6,7 @@ import '../core/place_info.dart';
 import '../core/place_search.dart';
 import '../l10n/app_localizations.dart';
 import '../presentation/place_category_style.dart';
+import '../presentation/app_motion.dart';
 
 class PlaceSearchSheet extends StatefulWidget {
   const PlaceSearchSheet({
@@ -61,7 +62,7 @@ class _PlaceSearchSheetState extends State<PlaceSearchSheet> {
     final availableHeight = MediaQuery.sizeOf(context).height - keyboardInset;
 
     return AnimatedPadding(
-      duration: const Duration(milliseconds: 180),
+      duration: AppMotion.duration(context, AppMotion.quick),
       curve: Curves.easeOutCubic,
       padding: EdgeInsets.only(bottom: keyboardInset),
       child: SafeArea(
@@ -198,8 +199,8 @@ class _PlaceSearchSheetState extends State<PlaceSearchSheet> {
                 ),
               ),
               Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
+                child: MotionSwitcher(
+                  alignment: Alignment.topCenter,
                   child: results.isEmpty
                       ? _EmptySearchResult(
                           title: widget.emptyTitle,
@@ -214,10 +215,22 @@ class _PlaceSearchSheetState extends State<PlaceSearchSheet> {
                           separatorBuilder: (_, _) => const SizedBox(height: 7),
                           itemBuilder: (context, index) {
                             final result = results[index];
-                            return _PlaceSearchTile(
+                            final tile = _PlaceSearchTile(
                               result: result,
                               onTap: () => Navigator.pop(context, result.place),
                             );
+                            // Animate only the first visible cards, not an entire city's list.
+                            return index < 6
+                                ? MotionEntrance(
+                                    key: ValueKey(
+                                      PlaceInfo.keyOf(result.place),
+                                    ),
+                                    duration: Duration(
+                                      milliseconds: 220 + index * 20,
+                                    ),
+                                    child: tile,
+                                  )
+                                : tile;
                           },
                         ),
                 ),
