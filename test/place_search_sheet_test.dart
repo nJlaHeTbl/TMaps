@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:tmaps/presentation/app_motion.dart';
+import 'package:tmaps/widgets/app_bottom_sheet.dart';
 import 'package:tmaps/widgets/place_search_sheet.dart';
 
 void main() {
@@ -27,7 +28,7 @@ void main() {
           builder: (context) => Scaffold(
             body: TextButton(
               onPressed: () async {
-                selected = await showModalBottomSheet<Map<String, dynamic>>(
+                selected = await showAppBottomSheet<Map<String, dynamic>>(
                   context: context,
                   isScrollControlled: true,
                   builder: (_) => PlaceSearchSheet(

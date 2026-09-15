@@ -39,6 +39,7 @@ import 'services/place_share_service.dart';
 import 'services/route_service.dart';
 import 'services/walking_route_controller.dart';
 import 'widgets/walking_route_panel.dart';
+import 'widgets/app_bottom_sheet.dart';
 import 'presentation/app_motion.dart';
 import 'services/submission_history_service.dart';
 import 'services/theme_preference_service.dart';
@@ -547,7 +548,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void showMapStylePicker() {
-    showModalBottomSheet<void>(
+    showAppBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -802,7 +803,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _showWeatherDetails() async {
     final weather = _weather;
     if (weather == null) return;
-    await showModalBottomSheet<void>(
+    await showAppBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -844,7 +845,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (kIsWeb || _locationState == LocationAccessState.deniedForever) {
       _isLocationHelpOpen = true;
       try {
-        await showModalBottomSheet<void>(
+        await showAppBottomSheet<void>(
           context: context,
           isScrollControlled: true,
           backgroundColor: Colors.transparent,
@@ -912,7 +913,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         return;
       }
 
-      final selected = await showModalBottomSheet<Map<String, dynamic>>(
+      final selected = await showAppBottomSheet<Map<String, dynamic>>(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
@@ -1040,7 +1041,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> showPlaceSearch() async {
     final camera = _mapController.camera;
-    final place = await showModalBottomSheet<Map<String, dynamic>>(
+    final place = await showAppBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -1059,7 +1060,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> showFavorites() async {
     final camera = _mapController.camera;
     final places = favoritePlaces;
-    final place = await showModalBottomSheet<Map<String, dynamic>>(
+    final place = await showAppBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -1239,7 +1240,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     var phoneCharging = showPhoneCharging;
     var evCharging = showEvCharging;
 
-    await showModalBottomSheet<void>(
+    await showAppBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
@@ -1466,7 +1467,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> showInstallInstructions() async {
-    await showModalBottomSheet<void>(
+    await showAppBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (context) {
@@ -1549,7 +1550,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> showSubmissionHistory() async {
-    final selected = await showModalBottomSheet<TrackedSubmission>(
+    final selected = await showAppBottomSheet<TrackedSubmission>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -1577,7 +1578,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> addToilet() async {
     if (isAddingToilet) return;
 
-    final mode = await showModalBottomSheet<AddLocationMode>(
+    final mode = await showAppBottomSheet<AddLocationMode>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -1670,12 +1671,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (isSubmittingPedestrianAlert || !await _ensureValidUsername()) return;
     if (!mounted) return;
 
-    final locationMode =
-        await showModalBottomSheet<PedestrianAlertLocationMode>(
-          context: context,
-          showDragHandle: true,
-          builder: (_) => const PedestrianAlertLocationSheet(),
-        );
+    final locationMode = await showAppBottomSheet<PedestrianAlertLocationMode>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => const PedestrianAlertLocationSheet(),
+    );
     if (!mounted || locationMode == null) return;
 
     if (locationMode == PedestrianAlertLocationMode.current) {
@@ -1703,7 +1703,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _showPedestrianAlertForm(LatLng position) async {
-    final draft = await showModalBottomSheet<PedestrianAlertDraft>(
+    final draft = await showAppBottomSheet<PedestrianAlertDraft>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -1760,7 +1760,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _showPedestrianAlertInfo(PedestrianAlert alert) async {
-    await showModalBottomSheet<void>(
+    await showAppBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (_) => _PedestrianAlertInfoSheet(alert: alert),
@@ -1868,7 +1868,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       var accessType = defaults.accessType;
       var comment = '';
 
-      final result = await showModalBottomSheet<bool>(
+      final result = await showAppBottomSheet<bool>(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
@@ -2143,7 +2143,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       PlaceInfo.effectiveValue(toilet, 'water_refill'),
     );
 
-    showModalBottomSheet(
+    showAppBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: false,
@@ -2249,7 +2249,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final isOwnSubmission = _submissionHistory.any(
       (tracked) => tracked.id == submissionId,
     );
-    final action = await showModalBottomSheet<_CommunityReviewAction>(
+    final action = await showAppBottomSheet<_CommunityReviewAction>(
       context: context,
       isScrollControlled: true,
       showDragHandle: false,
@@ -2365,7 +2365,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     if (!mounted) return;
 
-    final draft = await showModalBottomSheet<_PlaceReportDraft>(
+    final draft = await showAppBottomSheet<_PlaceReportDraft>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
