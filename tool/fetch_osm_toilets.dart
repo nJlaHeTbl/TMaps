@@ -156,6 +156,8 @@ Future<void> main() async {
       'source_url': 'https://www.openstreetmap.org/$type/$id',
       'wheelchair': tags['toilets:wheelchair'] ?? tags['wheelchair'],
       'opening_hours': tags['opening_hours'],
+      'wikimedia_commons': tags['wikimedia_commons'],
+      'image': tags['image'],
       'has_paper': tags['toilets:paper_supplied'],
       'has_soap': tags['handwashing:soap'],
       'phone_charging': hasPhoneCharging,

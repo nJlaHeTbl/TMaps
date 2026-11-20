@@ -127,7 +127,18 @@ class ToiletRepository {
       load('assets/data/kazakhstan_toilets.json'),
       load('assets/data/curated_places.json'),
     ]);
-    return [...bundled[1], ...bundled[0]];
+    final photoReferences =
+        jsonDecode(await rootBundle.loadString('assets/data/place_photos.json'))
+            as Map<String, dynamic>;
+    return [...bundled[1], ...bundled[0]]
+        .map((place) {
+          final photo = photoReferences[PlaceInfo.keyOf(place)];
+          return <String, dynamic>{
+            ...place,
+            if (photo is Map) ...Map<String, dynamic>.from(photo),
+          };
+        })
+        .toList(growable: false);
   }
 
   Future<List<Map<String, dynamic>>> _fetchReports() async {

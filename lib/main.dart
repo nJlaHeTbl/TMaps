@@ -48,6 +48,7 @@ import 'services/weather_controller.dart';
 import 'widgets/map_overlays.dart';
 import 'widgets/location_help_sheet.dart';
 import 'widgets/place_search_sheet.dart';
+import 'widgets/place_overview.dart';
 
 bool? _nullableBool(dynamic value) {
   if (value is bool) return value;
@@ -2150,6 +2151,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       backgroundColor: Colors.transparent,
       builder: (context) {
         return _ToiletInfoSheet(
+          place: toilet,
           title: PlaceInfo.titleOf(toilet),
           kindLabel: PlaceInfo.kindLabel(toilet),
           placeKind: PlaceInfo.kindOf(toilet),
@@ -6280,6 +6282,7 @@ class _ReviewCountTile extends StatelessWidget {
 }
 
 class _ToiletInfoSheet extends StatelessWidget {
+  final Map<String, dynamic> place;
   final String title;
   final String kindLabel;
   final PlaceKind placeKind;
@@ -6321,6 +6324,7 @@ class _ToiletInfoSheet extends StatelessWidget {
   final VoidCallback onClose;
 
   const _ToiletInfoSheet({
+    required this.place,
     required this.title,
     required this.kindLabel,
     required this.placeKind,
@@ -6560,6 +6564,9 @@ class _ToiletInfoSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                 ],
+
+                PlaceOverview(place: place),
+                const SizedBox(height: 20),
 
                 // Информация
                 if (isWater) ...[
