@@ -18,7 +18,7 @@ class ToiletRepository {
       Future<List<Map<String, dynamic>>> request,
     ) async {
       try {
-        return await request;
+        return await request.timeout(const Duration(seconds: 6));
       } on Object {
         return const [];
       }

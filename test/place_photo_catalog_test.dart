@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -6,6 +8,18 @@ import 'package:tmaps/data/toilet_repository.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('a stalled community backend cannot block bundled places', () async {
+    final repository = ToiletRepository(
+      HttpCommunityBackend(
+        baseUrl: 'https://tmaps.test',
+        client: MockClient((_) => Completer<http.Response>().future),
+      ),
+    );
+    final places = await repository.fetchAll().timeout(
+      const Duration(seconds: 8),
+    );
+    expect(places.length, greaterThan(2000));
+  });
   test(
     'photo references attach to the correct bundled place without a backend',
     () async {
