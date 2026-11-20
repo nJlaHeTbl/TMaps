@@ -28,6 +28,8 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Match the SDK used to analyze, test and build this release locally.
+          flutter-version: '3.44.8'
           cache: true
 
       - name: Install dependencies
