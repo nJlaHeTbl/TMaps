@@ -38,7 +38,15 @@ void main() {
         silkway['wikimedia_commons'],
         'File:Aĉetcentro SilkWay (Astano) 02.jpg',
       );
-      expect(places.where((p) => p['wikimedia_commons'] != null), hasLength(1));
+      final spring = places.singleWhere(
+        (p) => p['source_id'] == 'node/6755420269',
+      );
+      expect(spring['water_type'], 'spring');
+      expect(
+        spring['wikimedia_commons'],
+        'File:03 Родник Чокана Валиханова.jpg',
+      );
+      expect(places.where((p) => p['wikimedia_commons'] != null), hasLength(2));
       expect(places.length, greaterThan(2000));
     },
   );

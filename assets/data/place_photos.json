@@ -3,5 +3,10 @@
     "wikimedia_commons": "File:Aĉetcentro SilkWay (Astano) 02.jpg",
     "photo_reference_source": "https://commons.wikimedia.org/wiki/File:A%C4%89etcentro_SilkWay_(Astano)_02.jpg",
     "photo_reference_checked_at": "2026-11-20"
+  },
+  "osm:node/6755420269": {
+    "wikimedia_commons": "File:03 Родник Чокана Валиханова.jpg",
+    "photo_reference_source": "https://www.wikidata.org/wiki/Q86666586",
+    "photo_reference_checked_at": "2026-11-24"
   }
 }
