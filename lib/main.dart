@@ -10,6 +10,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'core/app_config.dart';
 import 'core/app_palette.dart';
@@ -36,7 +37,7 @@ import 'services/live_location_service.dart';
 import 'services/language_preference_service.dart';
 import 'services/map_style_preference_service.dart';
 import 'services/place_share_service.dart';
-import 'services/privacy_policy_link.dart';
+import 'services/legal_page_link.dart';
 import 'services/route_service.dart';
 import 'services/walking_route_controller.dart';
 import 'widgets/walking_route_panel.dart';
@@ -67,6 +68,7 @@ Color _toiletFeeColor({required bool feeKnown, required bool isFree}) {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  _registerExternalLicenses();
 
   if (!AppConfig.usesCommunityApi) {
     await Supabase.initialize(
@@ -76,6 +78,37 @@ Future<void> main() async {
   }
 
   runApp(const TMapsApp());
+}
+
+/// Licences of material loaded at run time that is not bundled as a Dart
+/// package, so it shows up on the "Лицензии и источники" page.
+void _registerExternalLicenses() {
+  LicenseRegistry.addLicense(() async* {
+    yield const LicenseEntryWithLineBreaks(
+      ['Roboto', 'Noto Sans (Google Fonts)'],
+      'The web engine loads the Roboto and Noto fonts from fonts.gstatic.com. '
+      'They are licensed under the SIL Open Font License 1.1 '
+      '(https://openfontlicense.org); earlier Roboto releases were published '
+      'under the Apache License 2.0.',
+    );
+    yield const LicenseEntryWithLineBreaks(
+      ['OpenStreetMap data'],
+      '© OpenStreetMap contributors. Available under the Open Database '
+      'License 1.0 (https://opendatacommons.org/licenses/odbl/1-0/). '
+      'https://www.openstreetmap.org/copyright',
+    );
+    yield const LicenseEntryWithLineBreaks(
+      ['Esri World Imagery'],
+      'Satellite imagery © Esri and its data suppliers, shown with the '
+      'attribution required by Esri on the map.',
+    );
+    yield const LicenseEntryWithLineBreaks(
+      ['Wikimedia Commons photos'],
+      'Place photos come from Wikimedia Commons under free licences '
+      '(CC BY, CC BY-SA, CC0 or public domain). The author, licence and '
+      'source of each photo are shown on the place card.',
+    );
+  });
 }
 
 class TMapsApp extends StatefulWidget {
@@ -235,6 +268,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Set<String> _favoritePlaceKeys = const {};
 
   String? username;
+
+  /// The welcome dialog was answered (name saved or "Просто смотреть карту").
+  bool _welcomeDone = false;
+
+  /// The person accepted the current terms and privacy policy and confirmed
+  /// their age. Needed only to send something, never to browse the map.
+  bool _hasLegalConsent = false;
+
+  static const _welcomeSeenKey = 'welcome_seen';
+  static const _legalConsentKey = 'legal_consent_version';
+  static const _legalConsentVersion = '2026-11-25';
+  static const _anonymousName = 'Аноним';
 
   bool isAddingToilet = false;
   bool _isPreparingRoute = false;
@@ -493,22 +538,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
 
     final savedUsername = prefs.getString('username');
+    final hasName = savedUsername != null && savedUsername.trim().isNotEmpty;
+    final welcomeSeen = prefs.getBool(_welcomeSeenKey) ?? false;
+    final hasConsent =
+        prefs.getString(_legalConsentKey) == _legalConsentVersion;
 
-    if (savedUsername != null && savedUsername.trim().isNotEmpty) {
-      if (!mounted) return;
+    if (!mounted) return;
+    setState(() {
+      if (hasName) username = savedUsername;
+      _hasLegalConsent = hasConsent;
+      _welcomeDone = hasName || welcomeSeen;
+    });
 
-      setState(() {
-        username = savedUsername;
-      });
-
+    if (_welcomeDone) {
       unawaited(_focusSharedPlaceIfReady());
-
       return;
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        showUsernameDialog();
+        showUsernameDialog(firstLaunch: true);
       }
     });
   }
@@ -583,7 +632,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _focusSharedPlaceIfReady() async {
-    if (_sharedPlaceHandled || username == null || allPlaces.isEmpty) return;
+    if (_sharedPlaceHandled || !_welcomeDone || allPlaces.isEmpty) return;
     final place = _placeShareService.findLinkedPlace(Uri.base, allPlaces);
     if (place == null) return;
 
@@ -633,118 +682,323 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return !wasFavorite;
   }
 
-  Future<void> showUsernameDialog() async {
-    final controller = TextEditingController();
+  Future<void> showUsernameDialog({bool firstLaunch = false}) async {
+    final controller = TextEditingController(
+      text: username == _anonymousName ? '' : username ?? '',
+    );
+    var accepted = _hasLegalConsent;
+
+    void finishWelcome() {
+      unawaited(_focusSharedPlaceIfReady());
+      if (firstLaunch) {
+        unawaited(_startLocation(requestPermission: true, center: true));
+      }
+    }
 
     await showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 26, 24, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 68,
-                  height: 68,
-                  decoration: BoxDecoration(
-                    color: green.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.travel_explore_rounded,
-                    color: green,
-                    size: 36,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                const LocalizedText(
-                  'Добро пожаловать в TMaps',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 8),
-                LocalizedText(
-                  'Как тебя называть?',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
-                ),
-                const SizedBox(height: 20),
-                TextField(
-                  controller: controller,
-                  autofocus: true,
-                  maxLength: 30,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: InputDecoration(
-                    labelText: context.l10n.translate('Имя'),
-                    hintText: context.l10n.translate('Например: Мирас'),
-                    prefixIcon: const Icon(Icons.person_outline),
-                  ),
-                ),
-                LocalizedText(
-                  'Имя будет видно другим рядом с вашими отзывами и заявками.',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-                ),
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: TextButton(
-                    onPressed: () => unawaited(_openPrivacyPolicy(context)),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 0),
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final mutedStyle = TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 13,
+            );
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 26, 24, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 68,
+                      height: 68,
+                      decoration: BoxDecoration(
+                        color: green.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.travel_explore_rounded,
+                        color: green,
+                        size: 36,
+                      ),
                     ),
-                    child: const LocalizedText('Политика конфиденциальности'),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () async {
-                      final name = controller.text.trim();
-
-                      final issue = ContentGuard.validateUsername(name);
-
-                      if (issue != null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            behavior: SnackBarBehavior.floating,
-                            content: LocalizedText(issue),
+                    const SizedBox(height: 18),
+                    LocalizedText(
+                      firstLaunch
+                          ? 'Добро пожаловать в TMaps'
+                          : 'Перед отправкой',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    LocalizedText(
+                      'Как тебя называть?',
+                      style: mutedStyle.copyWith(fontSize: 15),
+                    ),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: controller,
+                      autofocus: true,
+                      maxLength: 30,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: InputDecoration(
+                        labelText: context.l10n.translate(
+                          'Имя (необязательно)',
+                        ),
+                        hintText: context.l10n.translate('Например: Мирас'),
+                        prefixIcon: const Icon(Icons.person_outline),
+                      ),
+                    ),
+                    LocalizedText(
+                      'Имя будет видно другим рядом с вашими отзывами и заявками. Можно оставить пустым — тогда будет «Аноним».',
+                      style: mutedStyle,
+                    ),
+                    const SizedBox(height: 8),
+                    CheckboxListTile(
+                      value: accepted,
+                      onChanged: (value) =>
+                          setDialogState(() => accepted = value ?? false),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      title: const LocalizedText(
+                        'Мне есть 16 лет. Я принимаю условия использования и политику конфиденциальности.',
+                        style: TextStyle(fontSize: 13.5),
+                      ),
+                    ),
+                    Wrap(
+                      spacing: 4,
+                      children: [
+                        TextButton(
+                          onPressed: () => unawaited(
+                            _openLegalPage(context, LegalPage.terms),
                           ),
-                        );
-                        return;
-                      }
+                          child: const LocalizedText('Условия использования'),
+                        ),
+                        TextButton(
+                          onPressed: () => unawaited(
+                            _openLegalPage(context, LegalPage.privacy),
+                          ),
+                          child: const LocalizedText(
+                            'Политика конфиденциальности',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: !accepted
+                            ? null
+                            : () async {
+                                final typed = controller.text.trim();
+                                final name = typed.isEmpty
+                                    ? _anonymousName
+                                    : typed;
 
-                      final prefs = await SharedPreferences.getInstance();
+                                final issue = ContentGuard.validateUsername(
+                                  name,
+                                );
 
-                      await prefs.setString('username', name);
+                                if (issue != null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      behavior: SnackBarBehavior.floating,
+                                      content: LocalizedText(issue),
+                                    ),
+                                  );
+                                  return;
+                                }
 
-                      if (!mounted || !context.mounted) return;
+                                final prefs =
+                                    await SharedPreferences.getInstance();
+                                await prefs.setString('username', name);
+                                await prefs.setString(
+                                  _legalConsentKey,
+                                  _legalConsentVersion,
+                                );
+                                await prefs.setBool(_welcomeSeenKey, true);
 
-                      setState(() {
-                        username = name;
-                      });
+                                if (!mounted || !context.mounted) return;
 
-                      Navigator.of(context).pop();
-                      unawaited(_focusSharedPlaceIfReady());
-                      unawaited(
-                        _startLocation(requestPermission: true, center: true),
-                      );
-                    },
-                    child: const LocalizedText('Продолжить'),
-                  ),
+                                setState(() {
+                                  username = name;
+                                  _hasLegalConsent = true;
+                                  _welcomeDone = true;
+                                });
+
+                                Navigator.of(context).pop();
+                                finishWelcome();
+                              },
+                        child: const LocalizedText('Продолжить'),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: () async {
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setBool(_welcomeSeenKey, true);
+                          if (!mounted || !context.mounted) return;
+                          setState(() => _welcomeDone = true);
+                          Navigator.of(context).pop();
+                          finishWelcome();
+                        },
+                        child: LocalizedText(
+                          firstLaunch ? 'Просто смотреть карту' : 'Не сейчас',
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
 
     controller.dispose();
+  }
+
+  /// "Мои данные": what is stored where, local deletion, server request.
+  Future<void> _showMyDataDialog() async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const LocalizedText('Мои данные'),
+        content: const SingleChildScrollView(
+          child: LocalizedText(
+            'На этом устройстве хранятся: имя, случайный ключ устройства, избранное, история ваших заявок и настройки. Отправленные отзывы и заявки хранятся на сервере и видны всем.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop('server'),
+            child: const LocalizedText('Удалить с сервера'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop('device'),
+            child: const LocalizedText('Удалить с устройства'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const LocalizedText('Закрыть'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'server') {
+      await _requestServerDataDeletion();
+    } else if (action == 'device') {
+      await _confirmLocalDataDeletion();
+    }
+  }
+
+  Future<void> _requestServerDataDeletion() async {
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const LocalizedText('Удаление с сервера'),
+        content: const LocalizedText(
+          'Откроется публичная страница обращений проекта на GitHub. Напишите, какие отзывы или заявки удалить: имя, примерное место и дату. Не публикуйте там телефон, почту или ключ устройства.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const LocalizedText('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const LocalizedText('Открыть'),
+          ),
+        ],
+      ),
+    );
+    if (proceed != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final failure = context.l10n.translate('Не удалось открыть страницу');
+    final uri = Uri.parse('${AppConfig.contactUrl}/new').replace(
+      queryParameters: {'title': context.l10n.translate('Удаление данных')},
+    );
+    var opened = false;
+    try {
+      opened = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+        webOnlyWindowName: '_blank',
+      );
+    } on Object {
+      opened = false;
+    }
+    if (!opened) {
+      messenger.showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text('$failure: ${AppConfig.contactUrl}'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmLocalDataDeletion() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const LocalizedText('Удалить данные на этом устройстве?'),
+        content: const LocalizedText(
+          'Будут удалены имя, ключ устройства, избранное, история заявок и настройки. Отменить это нельзя. Отзывы на сервере останутся.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const LocalizedText('Отмена'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const LocalizedText('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    if (!mounted) return;
+
+    setState(() {
+      username = null;
+      _hasLegalConsent = false;
+      _welcomeDone = true;
+      _favoritePlaceKeys = const {};
+      _submissionHistory = const [];
+    });
+    widget.onThemeModeChanged(ThemeMode.system);
+    widget.onLanguageChanged(AppLanguage.system);
+    unawaited(_loadMapBaseStyle());
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        behavior: SnackBarBehavior.floating,
+        content: LocalizedText('Данные на этом устройстве удалены'),
+      ),
+    );
   }
 
   // =========================================================
@@ -1585,10 +1839,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // =========================================================
 
   Future<bool> _ensureValidUsername() async {
-    if (ContentGuard.validateUsername(username) == null) return true;
+    if (_hasLegalConsent && ContentGuard.validateUsername(username) == null) {
+      return true;
+    }
 
     await showUsernameDialog();
-    return mounted && ContentGuard.validateUsername(username) == null;
+    return mounted &&
+        _hasLegalConsent &&
+        ContentGuard.validateUsername(username) == null;
   }
 
   Future<void> addToilet() async {
@@ -2002,6 +2260,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     );
                     return;
                   }
+                  final missingChoice = isFree == null
+                      ? 'Укажи, платный туалет или бесплатный'
+                      : cleanliness == null
+                      ? 'Поставь оценку от 1 до 5'
+                      : condition == null
+                      ? 'Выбери состояние места'
+                      : null;
+                  if (missingChoice != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        behavior: SnackBarBehavior.floating,
+                        content: LocalizedText(missingChoice),
+                      ),
+                    );
+                    return;
+                  }
                   final issue = ContentGuard.validateComment(comment);
                   if (issue != null) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -2028,9 +2302,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         username: username!,
         placeKind: placeKind,
         name: placeName.trim().isEmpty ? null : placeName.trim(),
-        isFree: isFree,
-        cleanliness: cleanliness,
-        condition: condition,
+        isFree: isFree!,
+        cleanliness: cleanliness!,
+        condition: condition!,
         hasPaper: hasPaper,
         hasSoap: hasSoap,
         wheelchairAccessible: wheelchairAccessible,
@@ -2047,9 +2321,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         username: username!,
         placeKind: PlaceInfo.valueOfKind(placeKind),
         name: placeName.trim().isEmpty ? null : placeName.trim(),
-        isFree: isFree,
-        cleanliness: cleanliness,
-        condition: condition,
+        isFree: isFree!,
+        cleanliness: cleanliness!,
+        condition: condition!,
         hasPaper: hasPaper,
         hasSoap: hasSoap,
         wheelchairAccessible: wheelchairAccessible,
@@ -2357,10 +2631,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> showReportForm(Map<String, dynamic> place) async {
     if (isSubmittingReport) return;
 
-    if (ContentGuard.validateUsername(username) != null) {
-      await showUsernameDialog();
-      if (ContentGuard.validateUsername(username) != null) return;
-    }
+    if (!await _ensureValidUsername()) return;
 
     final placeKey = PlaceInfo.keyOf(place);
     final prefs = await SharedPreferences.getInstance();
@@ -2393,12 +2664,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           initialHasToilet: _nullableBool(
             PlaceInfo.effectiveValue(place, 'has_toilet'),
           ),
-          initialCleanliness:
-              (PlaceInfo.effectiveValue(place, 'cleanliness') as num?)?.toInt(),
-          initialCondition: PlaceInfo.effectiveValue(
-            place,
-            'condition',
-          )?.toString(),
           initialIsFree: PlaceInfo.feeStatus(place),
           canEditFee: PlaceInfo.hasToilet(place),
           initialPaper: _nullableBool(
@@ -2984,6 +3249,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       onThemeModeChanged: widget.onThemeModeChanged,
                       language: widget.language,
                       onLanguageChanged: widget.onLanguageChanged,
+                      onManageData: () => unawaited(_showMyDataDialog()),
                     ),
                   ),
                 ),
@@ -3708,16 +3974,19 @@ enum _HeaderPreferenceAction {
   languageRussian,
   languageKazakh,
   languageEnglish,
+  myData,
+  termsOfUse,
   privacyPolicy,
+  licenses,
 }
 
-Future<void> _openPrivacyPolicy(BuildContext context) async {
+Future<void> _openLegalPage(BuildContext context, LegalPage page) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
   final locale = context.l10n.locale;
   final failure =
       '${context.l10n.translate('Не удалось открыть страницу')}: '
-      '${PrivacyPolicyLink.uriFor(locale)}';
-  final opened = await PrivacyPolicyLink.open(locale);
+      '${LegalPageLink.uriFor(page, locale)}';
+  final opened = await LegalPageLink.open(page, locale);
   if (!opened) {
     messenger?.showSnackBar(
       SnackBar(behavior: SnackBarBehavior.floating, content: Text(failure)),
@@ -3742,7 +4011,10 @@ class _GlassHeader extends StatelessWidget {
     required this.onThemeModeChanged,
     required this.language,
     required this.onLanguageChanged,
+    required this.onManageData,
   });
+
+  final VoidCallback onManageData;
 
   @override
   Widget build(BuildContext context) {
@@ -3864,8 +4136,20 @@ class _GlassHeader extends StatelessWidget {
                       onLanguageChanged(AppLanguage.kazakh);
                     case _HeaderPreferenceAction.languageEnglish:
                       onLanguageChanged(AppLanguage.english);
+                    case _HeaderPreferenceAction.myData:
+                      onManageData();
+                    case _HeaderPreferenceAction.termsOfUse:
+                      unawaited(_openLegalPage(context, LegalPage.terms));
                     case _HeaderPreferenceAction.privacyPolicy:
-                      unawaited(_openPrivacyPolicy(context));
+                      unawaited(_openLegalPage(context, LegalPage.privacy));
+                    case _HeaderPreferenceAction.licenses:
+                      showLicensePage(
+                        context: context,
+                        applicationName: 'TMaps',
+                        applicationLegalese: context.l10n.translate(
+                          'Данные карты © участники OpenStreetMap, ODbL 1.0. Фото — Wikimedia Commons, автор и лицензия указаны в карточке места.',
+                        ),
+                      );
                   }
                 },
                 icon: Icon(
@@ -3950,9 +4234,30 @@ class _GlassHeader extends StatelessWidget {
                   const PopupMenuDivider(),
                   _preferenceMenuItem(
                     context,
+                    value: _HeaderPreferenceAction.myData,
+                    icon: Icons.manage_accounts_outlined,
+                    label: 'Мои данные',
+                    selected: false,
+                  ),
+                  _preferenceMenuItem(
+                    context,
+                    value: _HeaderPreferenceAction.termsOfUse,
+                    icon: Icons.gavel_rounded,
+                    label: 'Условия использования',
+                    selected: false,
+                  ),
+                  _preferenceMenuItem(
+                    context,
                     value: _HeaderPreferenceAction.privacyPolicy,
                     icon: Icons.privacy_tip_outlined,
                     label: 'Политика конфиденциальности',
+                    selected: false,
+                  ),
+                  _preferenceMenuItem(
+                    context,
+                    value: _HeaderPreferenceAction.licenses,
+                    icon: Icons.copyright_rounded,
+                    label: 'Лицензии и источники',
                     selected: false,
                   ),
                 ],
@@ -6674,7 +6979,7 @@ class _ToiletInfoSheet extends StatelessWidget {
                         child: _InfoCard(
                           icon: Icons.star_rounded,
                           iconColor: cleanliness > 0
-                              ? Colors.amber.shade700
+                              ? AppPalette.ratingStar
                               : Colors.blueGrey.shade600,
                           title: 'Чистота',
                           value: cleanliness > 0
@@ -7314,8 +7619,6 @@ class _PlaceReportSheet extends StatefulWidget {
   final String title;
   final bool canConfirmToilet;
   final bool? initialHasToilet;
-  final int? initialCleanliness;
-  final String? initialCondition;
   final bool? initialIsFree;
   final bool canEditFee;
   final bool? initialPaper;
@@ -7328,8 +7631,6 @@ class _PlaceReportSheet extends StatefulWidget {
     required this.title,
     required this.canConfirmToilet,
     required this.initialHasToilet,
-    required this.initialCleanliness,
-    required this.initialCondition,
     required this.initialIsFree,
     required this.canEditFee,
     required this.initialPaper,
@@ -7344,8 +7645,10 @@ class _PlaceReportSheet extends StatefulWidget {
 }
 
 class _PlaceReportSheetState extends State<_PlaceReportSheet> {
-  late int cleanliness;
-  late String condition;
+  // The rating and condition always start empty: the person rates what they
+  // see now instead of silently re-confirming the previous values.
+  int? cleanliness;
+  String? condition;
   late bool? isFree;
   late bool? hasToilet;
   late bool? hasPaper;
@@ -7367,15 +7670,6 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
   @override
   void initState() {
     super.initState();
-    cleanliness =
-        widget.initialCleanliness == null ||
-            widget.initialCleanliness! < 1 ||
-            widget.initialCleanliness! > 5
-        ? 3
-        : widget.initialCleanliness!;
-    condition = conditions.contains(widget.initialCondition)
-        ? widget.initialCondition!
-        : 'Среднее';
     isFree = widget.initialIsFree;
     hasToilet = widget.initialHasToilet;
     hasPaper = widget.initialPaper;
@@ -7394,6 +7688,20 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
   }
 
   void submit() {
+    final missingChoice = cleanliness == null
+        ? 'Поставь оценку от 1 до 5'
+        : condition == null
+        ? 'Выбери состояние места'
+        : null;
+    if (missingChoice != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: LocalizedText(missingChoice),
+        ),
+      );
+      return;
+    }
     final issue = ContentGuard.validateComment(commentController.text);
     if (issue != null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -7407,8 +7715,8 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
 
     Navigator.of(context).pop(
       _PlaceReportDraft(
-        cleanliness: cleanliness,
-        condition: condition,
+        cleanliness: cleanliness!,
+        condition: condition!,
         isFree: isFree,
         hasToilet: hasToilet,
         hasPaper: hasPaper,
@@ -7470,13 +7778,17 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
                     final star = index + 1;
                     return IconButton(
                       onPressed: () => setState(() => cleanliness = star),
+                      tooltip: context.l10n.translate('{count} из 5', {
+                        'count': star,
+                      }),
+                      isSelected: star <= (cleanliness ?? 0),
                       padding: const EdgeInsets.only(right: 4),
                       constraints: const BoxConstraints(),
                       icon: Icon(
-                        star <= cleanliness
+                        star <= (cleanliness ?? 0)
                             ? Icons.star_rounded
                             : Icons.star_border_rounded,
-                        color: Colors.amber.shade700,
+                        color: AppPalette.ratingStar,
                         size: 36,
                       ),
                     );
@@ -7485,6 +7797,7 @@ class _PlaceReportSheetState extends State<_PlaceReportSheet> {
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   initialValue: condition,
+                  hint: const LocalizedText('Выбери состояние'),
                   decoration: InputDecoration(
                     labelText: context.l10n.translate('Состояние'),
                     prefixIcon: const Icon(Icons.health_and_safety_outlined),
@@ -7935,9 +8248,9 @@ class _AddPlaceSheet extends StatelessWidget {
   final bool categoryChosen;
   final String placeName;
   final bool outdoorToilet;
-  final bool isFree;
-  final int cleanliness;
-  final String condition;
+  final bool? isFree;
+  final int? cleanliness;
+  final String? condition;
   final bool? hasPaper;
   final bool? hasSoap;
   final bool? wheelchairAccessible;
@@ -8287,7 +8600,7 @@ class _AddPlaceSheet extends StatelessWidget {
                       children: [
                         Expanded(
                           child: _ChoiceButton(
-                            selected: isFree,
+                            selected: isFree == true,
                             icon: Icons.check_circle_outline_rounded,
                             text: 'Бесплатный',
                             color: const Color(0xFF16A34A),
@@ -8296,7 +8609,7 @@ class _AddPlaceSheet extends StatelessWidget {
                         ),
                         Expanded(
                           child: _ChoiceButton(
-                            selected: !isFree,
+                            selected: isFree == false,
                             icon: Icons.payments_outlined,
                             text: 'Платный',
                             color: Colors.orange.shade700,
@@ -8333,7 +8646,7 @@ class _AddPlaceSheet extends StatelessWidget {
                       SizedBox(width: 9),
                       Expanded(
                         child: LocalizedText(
-                          'Точка появится на карте после быстрой проверки.',
+                          'Точка появится на карте, когда её подтвердят модератор или другие пользователи.',
                           style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w700,
@@ -8350,17 +8663,20 @@ class _AddPlaceSheet extends StatelessWidget {
                   children: List.generate(5, (index) {
                     final star = index + 1;
 
-                    return GestureDetector(
-                      onTap: () => onCleanlinessChanged(star),
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 7),
-                        child: Icon(
-                          star <= cleanliness
-                              ? Icons.star_rounded
-                              : Icons.star_border_rounded,
-                          color: Colors.amber.shade600,
-                          size: 37,
-                        ),
+                    return IconButton(
+                      onPressed: () => onCleanlinessChanged(star),
+                      tooltip: context.l10n.translate('{count} из 5', {
+                        'count': star,
+                      }),
+                      isSelected: star <= (cleanliness ?? 0),
+                      padding: const EdgeInsets.only(right: 7),
+                      constraints: const BoxConstraints(),
+                      icon: Icon(
+                        star <= (cleanliness ?? 0)
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        color: AppPalette.ratingStar,
+                        size: 37,
                       ),
                     );
                   }),
@@ -8379,6 +8695,7 @@ class _AddPlaceSheet extends StatelessWidget {
                 DropdownButtonFormField<String>(
                   key: ValueKey('condition-$condition'),
                   initialValue: condition,
+                  hint: const LocalizedText('Выбери состояние'),
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.cleaning_services_outlined),
                   ),
@@ -8591,48 +8908,60 @@ class _ChoiceButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: AppMotion.duration(
-          context,
-          const Duration(milliseconds: 180),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 8),
-        decoration: BoxDecoration(
-          color: selected ? scheme.surface : Colors.transparent,
+    // InkWell instead of GestureDetector: reachable with Tab and activated
+    // with Enter/Space, and announced as a selectable button.
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onTap,
           borderRadius: BorderRadius.circular(13),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.07),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 19,
-              color: selected ? color : scheme.onSurfaceVariant,
+          child: AnimatedContainer(
+            duration: AppMotion.duration(
+              context,
+              const Duration(milliseconds: 180),
             ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: LocalizedText(
-                text,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w800,
-                  color: selected ? scheme.onSurface : scheme.onSurfaceVariant,
+            padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 8),
+            decoration: BoxDecoration(
+              color: selected ? scheme.surface : Colors.transparent,
+              borderRadius: BorderRadius.circular(13),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.07),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: 19,
+                  color: selected ? color : scheme.onSurfaceVariant,
                 ),
-              ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: LocalizedText(
+                    text,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: selected
+                          ? scheme.onSurface
+                          : scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

@@ -171,8 +171,10 @@ class _LocationStep extends StatelessWidget {
             ),
             child: LocalizedText(
               number,
-              style: const TextStyle(
-                color: AppPalette.emerald,
+              style: TextStyle(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? AppPalette.mint
+                    : AppPalette.emeraldText,
                 fontWeight: FontWeight.w900,
               ),
             ),

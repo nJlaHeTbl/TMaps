@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/place_description.dart';
+import '../core/place_info.dart';
 import '../l10n/app_localizations.dart';
 import '../services/place_photo_service.dart';
 
@@ -116,7 +117,9 @@ class _PlaceOverviewState extends State<PlaceOverview> {
                     width: double.infinity,
                     height: 220,
                     fit: BoxFit.contain,
-                    semanticLabel: context.l10n.translate('Фотография места'),
+                    semanticLabel:
+                        '${context.l10n.translate('Фотография места')}: '
+                        '${context.l10n.translate(PlaceInfo.titleOf(widget.place))}',
                     loadingBuilder: (context, child, progress) =>
                         progress == null
                         ? child

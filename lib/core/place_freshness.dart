@@ -110,7 +110,8 @@ abstract final class PlaceFreshnessResolver {
       PlaceFreshnessSource.communityReport => 'Последнее уточнение от человека',
       PlaceFreshnessSource.locationCorrection =>
         'Координаты уточнены сообществом',
-      PlaceFreshnessSource.manualVerification => 'Проверено командой TMaps',
+      PlaceFreshnessSource.manualVerification =>
+        'Добавлено вручную командой TMaps',
       PlaceFreshnessSource.sourceSnapshot => 'Свежесть исходной открытой базы',
       PlaceFreshnessSource.added => 'Дата добавления точки',
       PlaceFreshnessSource.unknown => 'Источник даты неизвестен',

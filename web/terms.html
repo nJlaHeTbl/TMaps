@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>TMaps — условия использования</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <style>
+    :root {
+      --bg: #f6f8f7; --surface: #ffffff; --text: #17201c; --muted: #55635c;
+      --line: #dfe6e2; --accent: #0b7a54; --accent-soft: #e3f4ec;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101513; --surface: #18201c; --text: #e8efeb; --muted: #a3b2aa;
+        --line: #2a3530; --accent: #3fcf96; --accent-soft: #1d3329;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 760px; margin: 0 auto; padding: 24px 20px 64px; }
+    header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .back { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .back:hover, .back:focus-visible { text-decoration: underline; }
+    .langs { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
+    .langs button {
+      border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 14px; font-weight: 600;
+      padding: 6px 12px; border-radius: 999px; cursor: pointer; min-height: 36px;
+    }
+    .langs button[aria-pressed="true"] { background: var(--accent-soft); color: var(--text); }
+    .langs button:focus-visible, .back:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    h1 { font-size: 28px; line-height: 1.25; margin: 20px 0 4px; }
+    .updated { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+    h2 { font-size: 19px; margin: 32px 0 8px; }
+    .summary { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 4px 20px; }
+    ul { padding-left: 22px; margin: 8px 0; }
+    li { margin: 4px 0; }
+    a { color: var(--accent); }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <a class="back" href="./">← TMaps</a>
+    <div class="langs" role="group" aria-label="Язык / Тіл / Language">
+      <button type="button" data-lang="ru" aria-pressed="true">RU</button>
+      <button type="button" data-lang="kk" aria-pressed="false">KK</button>
+      <button type="button" data-lang="en" aria-pressed="false">EN</button>
+    </div>
+  </header>
+
+  <!-- ===================== RU ===================== -->
+  <article lang="ru" data-lang-block="ru">
+    <h1>Условия использования</h1>
+    <p class="updated">Действуют с 25 ноября 2026 года</p>
+    <p>TMaps — бесплатная пешеходная карта туалетов, питьевой воды и зарядок в Казахстане. Пользуясь сайтом, вы соглашаетесь с этими условиями. Перед первой отправкой отзыва или заявки приложение попросит принять их явно. Как мы обращаемся с данными, описано в <a href="privacy.html?lang=ru">политике конфиденциальности</a>.</p>
+
+    <div class="summary">
+      <ul>
+        <li>TMaps бесплатный: без подписок, платных функций и комиссий.</li>
+        <li>Данные на карте могут быть неточными — проверяйте на месте.</li>
+        <li>При угрозе жизни звоните 112: TMaps не вызывает экстренные службы.</li>
+        <li>Отправлять можно с 16 лет. Пишите правду и уважайте других.</li>
+      </ul>
+    </div>
+
+    <h2>1. Сервис бесплатный</h2>
+    <p>Карта, поиск, маршруты, отзывы и заявки бесплатны. Регистрации нет. Мы ничего не продаём, не берём комиссий и не показываем скрытых платежей, поэтому условий возврата денег нет. Если когда-нибудь появятся платные функции, цена и условия оплаты и возврата будут опубликованы до первого платежа, и платить без вашего явного согласия ничего не придётся.</p>
+    <p>Пометки «бесплатно» и «платно» в карточках относятся к самим туалетам и местам, а не к TMaps. TMaps не принимает оплату за них.</p>
+
+    <h2>2. Откуда данные и насколько им можно верить</h2>
+    <p>Места взяты из OpenStreetMap, фотографии — из Wikimedia Commons, отзывы и заявки присылают пользователи. Эти сведения могут быть неточными или устаревшими: место может оказаться закрытым, платным, без бумаги или без доступа. «Нет данных» означает, что мы этого не знаем. Перед тем как рассчитывать на место, проверьте его на месте.</p>
+    <p>Не пейте воду из источника, если её безопасность не подтверждена.</p>
+
+    <h2>3. Не для экстренных случаев</h2>
+    <p>Просьба о помощи в TMaps видна только людям рядом и не вызывает полицию, скорую или спасателей. При угрозе жизни или здоровью звоните 112.</p>
+
+    <h2>4. Кто может отправлять</h2>
+    <p>Смотреть карту может каждый. Отправлять отзывы, места, исправления, сообщения о препятствиях, голоса и просьбы о помощи можно, если вам есть 16 лет и вы приняли эти условия и политику конфиденциальности.</p>
+
+    <h2>5. Правила</h2>
+    <p>Нельзя:</p>
+    <ul>
+      <li>сообщать заведомо ложные сведения и оставлять отзывы о местах, где вы не были;</li>
+      <li>накручивать голоса и подтверждения, отправлять заявки с разных «устройств» за одного человека, использовать скрипты и автоматические запросы, обходить ограничения;</li>
+      <li>публиковать оскорбления, угрозы, рекламу, ссылки и спам;</li>
+      <li>публиковать чужие личные данные: телефоны, фамилии, адреса, номера машин;</li>
+      <li>нарушать законы Республики Казахстан.</li>
+    </ul>
+
+    <h2>6. Проверка и удаление записей</h2>
+    <p>Новое место появляется на карте после подтверждения модератором или другими пользователями. Мы можем скрыть или удалить запись, которая нарушает правила, устарела или вводит в заблуждение, а при повторных нарушениях — ограничить отправку с устройства.</p>
+
+    <h2>7. Ваши отзывы и заявки</h2>
+    <p>Вы отвечаете за то, что отправляете. Отправляя отзыв или заявку, вы разрешаете бесплатно показывать их на карте TMaps и хранить, пока они полезны, или до вашей просьбы удалить. Удалить свою запись можно через меню настроек → «Мои данные» или написав нам.</p>
+
+    <h2>8. Чужие материалы</h2>
+    <p>Данные карты — © участники OpenStreetMap, лицензия ODbL 1.0. Фотографии публикуются по свободным лицензиям Wikimedia Commons с указанием автора и лицензии в карточке места. Спутниковые снимки — © Esri и её поставщики. Лицензии библиотек и шрифтов — в меню настроек → «Лицензии и источники».</p>
+
+    <h2>9. Ответственность</h2>
+    <p>TMaps предоставляется бесплатно и «как есть». Мы стараемся, чтобы карта работала и была точной, но не гарантируем, что сведения верны, а сайт доступен всегда и без ошибок. В пределах, допускаемых законом, мы не отвечаем за последствия решений, принятых на основе данных карты.</p>
+
+    <h2>10. Изменения</h2>
+    <p>Если условия изменятся, мы обновим их на этой странице, поменяем дату вверху и попросим заново принять их перед следующей отправкой.</p>
+
+    <h2>11. Применимое право и связь</h2>
+    <p>К этим условиям применяется законодательство Республики Казахстан. Вопросы и жалобы: <a href="https://github.com/nJlaHeTbl/TMaps/issues" rel="noopener">GitHub Issues проекта TMaps</a>. Сообщения там видны всем, поэтому не пишите в них личные данные.</p>
+  </article>
+
+  <!-- ===================== KK ===================== -->
+  <article lang="kk" data-lang-block="kk" hidden>
+    <h1>Пайдалану шарттары</h1>
+    <p class="updated">2026 жылғы 25 қарашадан бастап күшінде</p>
+    <p>TMaps — Қазақстандағы дәретханалардың, ауыз судың және зарядтау орындарының тегін жаяу жүргіншілер картасы. Сайтты пайдалана отырып, сіз осы шарттармен келісесіз. Алғашқы пікірді немесе өтінімді жіберер алдында қолданба оларды анық қабылдауды сұрайды. Деректермен қалай жұмыс істейтініміз <a href="privacy.html?lang=kk">құпиялылық саясатында</a> сипатталған.</p>
+
+    <div class="summary">
+      <ul>
+        <li>TMaps тегін: жазылымсыз, ақылы функцияларсыз және комиссиясыз.</li>
+        <li>Картадағы деректер дәл болмауы мүмкін — орнында тексеріңіз.</li>
+        <li>Өмірге қауіп төнсе, 112-ге қоңырау шалыңыз: TMaps шұғыл қызметтерді шақырмайды.</li>
+        <li>16 жастан бастап жіберуге болады. Шындықты жазыңыз және басқаларды құрметтеңіз.</li>
+      </ul>
+    </div>
+
+    <h2>1. Қызмет тегін</h2>
+    <p>Карта, іздеу, маршруттар, пікірлер мен өтінімдер тегін. Тіркелу жоқ. Біз ештеңе сатпаймыз, комиссия алмаймыз және жасырын төлемдер жоқ, сондықтан ақшаны қайтару шарттары да жоқ. Егер бір кезде ақылы функциялар пайда болса, бағасы мен төлеу және қайтару шарттары алғашқы төлемге дейін жарияланады, ал сіздің анық келісіміңізсіз ештеңе төлеуге тура келмейді.</p>
+    <p>Карточкалардағы «тегін» және «ақылы» белгілері TMaps-ке емес, дәретханалар мен орындардың өздеріне қатысты. TMaps олар үшін төлем қабылдамайды.</p>
+
+    <h2>2. Деректер қайдан алынады және оларға қаншалықты сенуге болады</h2>
+    <p>Орындар OpenStreetMap-тен, суреттер Wikimedia Commons-тан алынған, пікірлер мен өтінімдерді пайдаланушылар жібереді. Бұл мәліметтер дәл емес немесе ескірген болуы мүмкін: орын жабық, ақылы, қағазсыз немесе кіруге болмайтын болып шығуы мүмкін. «Дерек жоқ» дегеніміз — біз мұны білмейміз. Орынға сенер алдында оны орнында тексеріңіз.</p>
+    <p>Қауіпсіздігі расталмаған көздің суын ішпеңіз.</p>
+
+    <h2>3. Шұғыл жағдайларға арналмаған</h2>
+    <p>TMaps-тегі көмек сұрауы тек жақын маңдағы адамдарға көрінеді және полицияны, жедел жәрдемді немесе құтқарушыларды шақырмайды. Өмірге немесе денсаулыққа қауіп төнсе, 112-ге қоңырау шалыңыз.</p>
+
+    <h2>4. Кім жібере алады</h2>
+    <p>Картаны кез келген адам қарай алады. Пікірлерді, орындарды, түзетулерді, кедергі туралы хабарламаларды, дауыстарды және көмек сұрауларын жасыңыз 16-да немесе одан үлкен болса және осы шарттар мен құпиялылық саясатын қабылдасаңыз жіберуге болады.</p>
+
+    <h2>5. Ережелер</h2>
+    <p>Мыналарға тыйым салынады:</p>
+    <ul>
+      <li>әдейі жалған мәліметтер беру және өзіңіз болмаған орындар туралы пікір қалдыру;</li>
+      <li>дауыстар мен растауларды қолдан көбейту, бір адам атынан әртүрлі «құрылғылардан» өтінім жіберу, скрипттер мен автоматты сұрауларды пайдалану, шектеулерді айналып өту;</li>
+      <li>қорлау, қорқыту, жарнама, сілтемелер және спам жариялау;</li>
+      <li>басқа адамдардың жеке деректерін жариялау: телефондар, тегі, мекенжайлар, көлік нөмірлері;</li>
+      <li>Қазақстан Республикасының заңдарын бұзу.</li>
+    </ul>
+
+    <h2>6. Жазбаларды тексеру және жою</h2>
+    <p>Жаңа орын модератор немесе басқа пайдаланушылар растағаннан кейін картада пайда болады. Біз ережелерді бұзатын, ескірген немесе адастыратын жазбаны жасыра немесе жоя аламыз, ал қайталанған бұзушылықтар кезінде құрылғыдан жіберуді шектей аламыз.</p>
+
+    <h2>7. Сіздің пікірлеріңіз бен өтінімдеріңіз</h2>
+    <p>Жіберген нәрсеңізге өзіңіз жауаптысыз. Пікір немесе өтінім жібере отырып, сіз оларды TMaps картасында тегін көрсетуге және пайдалы болғанша немесе жоюды сұрағаныңызға дейін сақтауға рұқсат бересіз. Жазбаңызды баптаулар мәзірі → «Менің деректерім» арқылы немесе бізге жазып жоюға болады.</p>
+
+    <h2>8. Басқалардың материалдары</h2>
+    <p>Карта деректері — © OpenStreetMap қатысушылары, ODbL 1.0 лицензиясы. Суреттер Wikimedia Commons-тың еркін лицензиялары бойынша жарияланады, авторы мен лицензиясы орын карточкасында көрсетіледі. Спутниктік суреттер — © Esri және оның жеткізушілері. Кітапханалар мен қаріптердің лицензиялары — баптаулар мәзірі → «Лицензиялар мен дереккөздер».</p>
+
+    <h2>9. Жауапкершілік</h2>
+    <p>TMaps тегін және «сол күйінде» беріледі. Біз картаның жұмыс істеуіне және дәл болуына тырысамыз, бірақ мәліметтердің дұрыстығына, сайттың әрқашан және қатесіз қолжетімді болуына кепілдік бермейміз. Заң рұқсат ететін шекте біз карта деректері негізінде қабылданған шешімдердің салдары үшін жауап бермейміз.</p>
+
+    <h2>10. Өзгерістер</h2>
+    <p>Шарттар өзгерсе, біз оларды осы бетте жаңартып, жоғарыдағы күнді өзгертеміз және келесі жіберу алдында оларды қайта қабылдауды сұраймыз.</p>
+
+    <h2>11. Қолданылатын құқық және байланыс</h2>
+    <p>Осы шарттарға Қазақстан Республикасының заңнамасы қолданылады. Сұрақтар мен шағымдар: <a href="https://github.com/nJlaHeTbl/TMaps/issues" rel="noopener">TMaps жобасының GitHub Issues беті</a>. Ондағы хабарламалар барлығына көрінеді, сондықтан оларға жеке деректерді жазбаңыз.</p>
+  </article>
+
+  <!-- ===================== EN ===================== -->
+  <article lang="en" data-lang-block="en" hidden>
+    <h1>Terms of use</h1>
+    <p class="updated">Effective from 25 November 2026</p>
+    <p>TMaps is a free walking map of toilets, drinking water and charging points in Kazakhstan. By using the site you agree to these terms. Before your first review or submission the app asks you to accept them explicitly. How we handle data is described in the <a href="privacy.html?lang=en">privacy policy</a>.</p>
+
+    <div class="summary">
+      <ul>
+        <li>TMaps is free: no subscriptions, paid features or fees.</li>
+        <li>Map data may be inaccurate — check on site.</li>
+        <li>In an emergency call 112: TMaps does not contact emergency services.</li>
+        <li>You must be 16 or older to send anything. Be truthful and respectful.</li>
+      </ul>
+    </div>
+
+    <h2>1. The service is free</h2>
+    <p>The map, search, routes, reviews and submissions are free. There is no sign-up. We do not sell anything, charge fees or add hidden payments, so there is no refund policy. If paid features ever appear, the price and the payment and refund terms will be published before the first payment, and nothing will be charged without your explicit consent.</p>
+    <p>The “free” and “paid” labels on place cards describe the toilets and places themselves, not TMaps. TMaps does not take payment for them.</p>
+
+    <h2>2. Where the data comes from and how far to trust it</h2>
+    <p>Places come from OpenStreetMap, photos from Wikimedia Commons, and reviews and submissions from users. This information may be inaccurate or out of date: a place may turn out to be closed, paid, without paper or not accessible. “No data” means we do not know. Check a place on site before you rely on it.</p>
+    <p>Do not drink water from a source unless its safety is confirmed.</p>
+
+    <h2>3. Not for emergencies</h2>
+    <p>A help request in TMaps is shown only to people nearby and does not call the police, an ambulance or rescuers. If life or health is at risk, call 112.</p>
+
+    <h2>4. Who can send things</h2>
+    <p>Anyone can browse the map. You can send reviews, places, corrections, obstacle reports, votes and help requests if you are 16 or older and have accepted these terms and the privacy policy.</p>
+
+    <h2>5. Rules</h2>
+    <p>You must not:</p>
+    <ul>
+      <li>knowingly post false information or review places you have not visited;</li>
+      <li>inflate votes or confirmations, send submissions from several “devices” as one person, use scripts or automated requests, or get around limits;</li>
+      <li>post insults, threats, advertising, links or spam;</li>
+      <li>post other people's personal data: phone numbers, surnames, addresses, car plates;</li>
+      <li>break the laws of the Republic of Kazakhstan.</li>
+    </ul>
+
+    <h2>6. Review and removal</h2>
+    <p>A new place appears on the map after a moderator or other users confirm it. We may hide or delete an entry that breaks the rules, is out of date or is misleading, and limit sending from a device after repeated violations.</p>
+
+    <h2>7. Your reviews and submissions</h2>
+    <p>You are responsible for what you send. By sending a review or submission you allow TMaps to show it on the map free of charge and to keep it while it is useful, or until you ask us to delete it. You can delete your entry via the settings menu → “My data” or by writing to us.</p>
+
+    <h2>8. Third-party material</h2>
+    <p>Map data © OpenStreetMap contributors, ODbL 1.0. Photos are published under free Wikimedia Commons licences, with the author and licence shown on the place card. Satellite imagery © Esri and its suppliers. Licences of libraries and fonts are in the settings menu → “Licenses and sources”.</p>
+
+    <h2>9. Liability</h2>
+    <p>TMaps is provided free of charge and “as is”. We try to keep the map working and accurate, but we do not guarantee that the information is correct or that the site is always available and error-free. To the extent permitted by law, we are not liable for the consequences of decisions made on the basis of map data.</p>
+
+    <h2>10. Changes</h2>
+    <p>If these terms change, we will update them on this page, change the date at the top and ask you to accept them again before your next submission.</p>
+
+    <h2>11. Governing law and contact</h2>
+    <p>These terms are governed by the laws of the Republic of Kazakhstan. Questions and complaints: <a href="https://github.com/nJlaHeTbl/TMaps/issues" rel="noopener">TMaps project on GitHub Issues</a>. Messages there are public, so please do not include personal details.</p>
+  </article>
+</main>
+<script>
+  (function () {
+    var supported = ['ru', 'kk', 'en'];
+    var titles = {
+      ru: 'TMaps — условия использования',
+      kk: 'TMaps — пайдалану шарттары',
+      en: 'TMaps — terms of use'
+    };
+    function pick() {
+      var fromUrl = new URLSearchParams(location.search).get('lang');
+      if (supported.indexOf(fromUrl) !== -1) return fromUrl;
+      var langs = navigator.languages || [navigator.language || 'ru'];
+      for (var i = 0; i < langs.length; i++) {
+        var code = String(langs[i]).toLowerCase().slice(0, 2);
+        if (code === 'kk') return 'kk';
+        if (code === 'ru') return 'ru';
+        if (code === 'en') return 'en';
+      }
+      return 'ru';
+    }
+    function apply(lang, updateUrl) {
+      document.documentElement.lang = lang;
+      document.title = titles[lang];
+      document.querySelectorAll('[data-lang-block]').forEach(function (el) {
+        el.hidden = el.getAttribute('data-lang-block') !== lang;
+      });
+      document.querySelectorAll('[data-lang]').forEach(function (btn) {
+        btn.setAttribute('aria-pressed', String(btn.getAttribute('data-lang') === lang));
+      });
+      if (updateUrl && history.replaceState) {
+        var url = new URL(location.href);
+        url.searchParams.set('lang', lang);
+        history.replaceState(null, '', url);
+      }
+    }
+    document.querySelectorAll('[data-lang]').forEach(function (btn) {
+      btn.addEventListener('click', function () { apply(btn.getAttribute('data-lang'), true); });
+    });
+    apply(pick(), false);
+  })();
+</script>
+</body>
+</html>

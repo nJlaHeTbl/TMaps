@@ -1,6 +1,9 @@
 abstract final class AppConfig {
   static const publicAppUrl = 'https://njlahetbl.github.io/TMaps/';
 
+  /// Public contact channel named in the privacy policy and terms.
+  static const contactUrl = 'https://github.com/nJlaHeTbl/TMaps/issues';
+
   static const supabaseUrl = 'https://fbvvaozvgledhiidvplw.supabase.co';
   static const supabasePublishableKey =
       'sb_publishable_DdevGM-RfKW0wdmFezhFhw_23oVq39Y';

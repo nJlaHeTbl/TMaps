@@ -40,7 +40,7 @@ extension PedestrianAlertTypeInfo on PedestrianAlertType {
   };
 
   String get description => switch (this) {
-    PedestrianAlertType.open => 'Участок проверен — пройти можно',
+    PedestrianAlertType.open => 'По сообщению пешехода — пройти можно',
     PedestrianAlertType.closed => 'Пешеходный проход временно недоступен',
     PedestrianAlertType.ice => 'Скользкий участок — иди осторожно',
     PedestrianAlertType.construction => 'На пути идут ремонтные работы',
