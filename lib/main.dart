@@ -2504,6 +2504,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _requestPaperHelp(Map<String, dynamic> place) async {
     if (isSubmittingHelp || place['paper_help_active'] == true) return;
+    if (!await _ensureValidUsername()) return;
     try {
       setState(() => isSubmittingHelp = true);
       await _toiletRepository.requestPaperHelp(
@@ -2588,6 +2589,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       );
       return;
     }
+    if (!await _ensureValidUsername()) return;
 
     try {
       setState(() => isSubmittingVote = true);
@@ -2734,7 +2736,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     Map<String, dynamic> place, {
     required bool isCurrent,
   }) async {
-    if (isSubmittingVote) return;
+    if (isSubmittingVote || !await _ensureValidUsername()) return;
 
     try {
       setState(() => isSubmittingVote = true);
