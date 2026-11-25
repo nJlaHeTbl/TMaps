@@ -36,6 +36,7 @@ import 'services/live_location_service.dart';
 import 'services/language_preference_service.dart';
 import 'services/map_style_preference_service.dart';
 import 'services/place_share_service.dart';
+import 'services/privacy_policy_link.dart';
 import 'services/route_service.dart';
 import 'services/walking_route_controller.dart';
 import 'widgets/walking_route_panel.dart';
@@ -682,6 +683,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     labelText: context.l10n.translate('Имя'),
                     hintText: context.l10n.translate('Например: Мирас'),
                     prefixIcon: const Icon(Icons.person_outline),
+                  ),
+                ),
+                LocalizedText(
+                  'Имя будет видно другим рядом с вашими отзывами и заявками.',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                ),
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton(
+                    onPressed: () => unawaited(_openPrivacyPolicy(context)),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 0),
+                    ),
+                    child: const LocalizedText('Политика конфиденциальности'),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -3693,6 +3708,21 @@ enum _HeaderPreferenceAction {
   languageRussian,
   languageKazakh,
   languageEnglish,
+  privacyPolicy,
+}
+
+Future<void> _openPrivacyPolicy(BuildContext context) async {
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  final locale = context.l10n.locale;
+  final failure =
+      '${context.l10n.translate('Не удалось открыть страницу')}: '
+      '${PrivacyPolicyLink.uriFor(locale)}';
+  final opened = await PrivacyPolicyLink.open(locale);
+  if (!opened) {
+    messenger?.showSnackBar(
+      SnackBar(behavior: SnackBarBehavior.floating, content: Text(failure)),
+    );
+  }
 }
 
 class _GlassHeader extends StatelessWidget {
@@ -3834,6 +3864,8 @@ class _GlassHeader extends StatelessWidget {
                       onLanguageChanged(AppLanguage.kazakh);
                     case _HeaderPreferenceAction.languageEnglish:
                       onLanguageChanged(AppLanguage.english);
+                    case _HeaderPreferenceAction.privacyPolicy:
+                      unawaited(_openPrivacyPolicy(context));
                   }
                 },
                 icon: Icon(
@@ -3914,6 +3946,14 @@ class _GlassHeader extends StatelessWidget {
                     icon: Icons.language_rounded,
                     label: 'English',
                     selected: language == AppLanguage.english,
+                  ),
+                  const PopupMenuDivider(),
+                  _preferenceMenuItem(
+                    context,
+                    value: _HeaderPreferenceAction.privacyPolicy,
+                    icon: Icons.privacy_tip_outlined,
+                    label: 'Политика конфиденциальности',
+                    selected: false,
                   ),
                 ],
               ),

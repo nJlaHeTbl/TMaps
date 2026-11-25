@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>TMaps — политика конфиденциальности</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <style>
+    :root {
+      --bg: #f6f8f7; --surface: #ffffff; --text: #17201c; --muted: #55635c;
+      --line: #dfe6e2; --accent: #0f8f63; --accent-soft: #e3f4ec;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101513; --surface: #18201c; --text: #e8efeb; --muted: #a3b2aa;
+        --line: #2a3530; --accent: #3fcf96; --accent-soft: #1d3329;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 760px; margin: 0 auto; padding: 24px 20px 64px; }
+    header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .back { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .back:hover, .back:focus-visible { text-decoration: underline; }
+    .langs { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
+    .langs button {
+      border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 14px; font-weight: 600;
+      padding: 6px 12px; border-radius: 999px; cursor: pointer; min-height: 36px;
+    }
+    .langs button[aria-pressed="true"] { background: var(--accent-soft); color: var(--text); }
+    .langs button:focus-visible, .back:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    h1 { font-size: 28px; line-height: 1.25; margin: 20px 0 4px; }
+    .updated { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+    h2 { font-size: 19px; margin: 32px 0 8px; }
+    .summary { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 4px 20px; }
+    ul { padding-left: 22px; margin: 8px 0; }
+    li { margin: 4px 0; }
+    a { color: var(--accent); }
+    .services { width: 100%; border-collapse: collapse; font-size: 15px; }
+    .services th, .services td { text-align: left; vertical-align: top; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line); }
+    .services th { color: var(--muted); font-weight: 600; }
+    .note { color: var(--muted); font-size: 14px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <a class="back" href="./" data-i18n-back>← TMaps</a>
+    <div class="langs" role="group" aria-label="Язык / Тіл / Language">
+      <button type="button" data-lang="ru" aria-pressed="true">RU</button>
+      <button type="button" data-lang="kk" aria-pressed="false">KK</button>
+      <button type="button" data-lang="en" aria-pressed="false">EN</button>
+    </div>
+  </header>
+
+  <!-- ===================== RU ===================== -->
+  <article lang="ru" data-lang-block="ru">
+    <h1>Политика конфиденциальности</h1>
+    <p class="updated">Действует с 25 ноября 2026 года</p>
+    <p>TMaps — бесплатная пешеходная карта туалетов, питьевой воды и зарядок в Казахстане. Здесь простыми словами написано, какие данные использует сайт, куда они уходят и как их удалить.</p>
+
+    <div class="summary">
+      <ul>
+        <li>Регистрации нет. Мы не просим телефон, почту или пароль.</li>
+        <li>Нет рекламы, аналитики и cookies для слежки.</li>
+        <li>Отзывы, заявки и сообщения, которые вы отправляете, видны всем вместе с указанным вами именем.</li>
+        <li>Геолокация работает только после вашего разрешения, и мы её не сохраняем.</li>
+      </ul>
+    </div>
+
+    <h2>1. Что хранится только на вашем устройстве</h2>
+    <p>В памяти браузера хранятся:</p>
+    <ul>
+      <li>имя, которое вы ввели при первом входе;</li>
+      <li>случайный ключ устройства — набор символов, не связанный с вашей личностью;</li>
+      <li>избранные места и история ваших заявок;</li>
+      <li>тема, язык и вид карты;</li>
+      <li>время ваших последних отзывов, чтобы не отправлять повторы.</li>
+    </ul>
+    <p>Эти данные не уходят на сервер, пока вы сами что-то не отправите. Чтобы удалить их, очистите данные сайта в настройках браузера.</p>
+
+    <h2>2. Что вы отправляете и кто это видит</h2>
+    <p>Когда вы оставляете отзыв, добавляете место, исправляете координаты, сообщаете о препятствии на пути, голосуете или просите помощи, на сервер уходят:</p>
+    <ul>
+      <li>координаты места — точки на карте, а не вашего положения (если только вы сами не отметили место, где стоите);</li>
+      <li>ваши ответы: чистота, состояние, платность, бумага, мыло, доступность, комментарий;</li>
+      <li>имя из первого входа — в отзывах, заявках, исправлениях и сообщениях о препятствиях;</li>
+      <li>время отправки;</li>
+      <li>случайный ключ устройства — для голосов, проверки заявок, сообщений и просьб о помощи, чтобы один человек не голосовал много раз.</li>
+    </ul>
+    <p><strong>Видно всем:</strong> имя, координаты, ответы, комментарий и время. Ключ устройства другим людям не показывается.</p>
+    <p>Не пишите в имени и комментариях телефон, фамилию и другие личные данные.</p>
+    <p>Просьба о помощи видна 45 минут, сообщение о препятствии — от 6 часов до 3 дней, в зависимости от типа. Отзывы и места хранятся, пока они полезны для карты, или до вашей просьбы их удалить.</p>
+
+    <h2>3. Геолокация</h2>
+    <p>Сайт просит доступ к местоположению, чтобы показать вас на карте, найти ближайшие места и построить пеший маршрут. Можно отказать — карта продолжит работать.</p>
+    <p>Мы не сохраняем ваше местоположение и не отправляем его в нашу базу. Но:</p>
+    <ul>
+      <li>при построении маршрута точки начала и конца отправляются сервису маршрутов;</li>
+      <li>погода запрашивается для точки, которую показывает карта. Если карта следует за вами, это примерно ваше местоположение.</li>
+    </ul>
+
+    <h2>4. Сторонние сервисы</h2>
+    <p>Во время работы сайта браузер обращается к серверам ниже. Каждый из них видит ваш IP-адрес и технические данные браузера и обрабатывает их по своим правилам.</p>
+    <table class="services">
+      <thead><tr><th>Сервис</th><th>Зачем</th></tr></thead>
+      <tbody>
+        <tr><td>GitHub Pages (GitHub, Inc.)</td><td>размещение сайта</td></tr>
+        <tr><td>Supabase</td><td>база отзывов, заявок и голосов</td></tr>
+        <tr><td>Google (gstatic.com)</td><td>загрузка графического движка сайта и шрифтов</td></tr>
+        <tr><td>OpenStreetMap Foundation</td><td>подложка карты</td></tr>
+        <tr><td>Esri (arcgisonline.com)</td><td>спутниковые снимки, если вы их включили</td></tr>
+        <tr><td>FOSSGIS e.V. (routing.openstreetmap.de)</td><td>пешие маршруты</td></tr>
+        <tr><td>Open-Meteo</td><td>погода</td></tr>
+        <tr><td>Wikimedia Commons</td><td>фотографии мест</td></tr>
+      </tbody>
+    </table>
+    <p class="note">Данные о местах взяты из OpenStreetMap: © участники OpenStreetMap, лицензия ODbL.</p>
+
+    <h2>5. Чего мы не делаем</h2>
+    <p>Не продаём данные и не передаём их для рекламы. Не подключаем аналитику и cookies для слежки. Не составляем профили пользователей.</p>
+
+    <h2>6. Как удалить или исправить данные</h2>
+    <ul>
+      <li><strong>Данные на устройстве:</strong> очистите данные сайта njlahetbl.github.io в настройках браузера.</li>
+      <li><strong>Отправленные отзывы и заявки:</strong> напишите нам. Укажите место, примерное время и имя, под которым отправляли, — мы удалим или исправим запись.</li>
+    </ul>
+
+    <h2>7. Связь</h2>
+    <p>Вопросы и просьбы об удалении: <a href="https://github.com/nJlaHeTbl/TMaps/issues" rel="noopener">GitHub Issues проекта TMaps</a>. Сообщения там видны всем, поэтому не пишите в них личные данные.</p>
+
+    <h2>8. Изменения</h2>
+    <p>Если политика изменится, мы обновим её на этой странице и поменяем дату вверху.</p>
+  </article>
+
+  <!-- ===================== KK ===================== -->
+  <article lang="kk" data-lang-block="kk" hidden>
+    <h1>Құпиялылық саясаты</h1>
+    <p class="updated">2026 жылғы 25 қарашадан бастап күшінде</p>
+    <p>TMaps — Қазақстандағы дәретханалардың, ауыз судың және зарядтау орындарының тегін жаяу жүргіншілер картасы. Мұнда сайт қандай деректерді пайдаланатыны, олар қайда жіберілетіні және оларды қалай жоюға болатыны қарапайым тілмен жазылған.</p>
+
+    <div class="summary">
+      <ul>
+        <li>Тіркелу жоқ. Біз телефон, пошта немесе құпиясөз сұрамаймыз.</li>
+        <li>Жарнама, аналитика және бақылауға арналған cookie жоқ.</li>
+        <li>Сіз жіберген пікірлер, өтінімдер мен хабарламалар сіз көрсеткен атпен бірге барлығына көрінеді.</li>
+        <li>Геолокация тек сіздің рұқсатыңызбен жұмыс істейді, біз оны сақтамаймыз.</li>
+      </ul>
+    </div>
+
+    <h2>1. Тек құрылғыңызда сақталатын деректер</h2>
+    <p>Браузер жадында мыналар сақталады:</p>
+    <ul>
+      <li>алғаш кіргенде енгізген атыңыз;</li>
+      <li>құрылғының кездейсоқ кілті — жеке басыңызбен байланысы жоқ таңбалар жиыны;</li>
+      <li>таңдаулы орындар және өтінімдеріңіздің тарихы;</li>
+      <li>тақырып, тіл және карта түрі;</li>
+      <li>қайталанбас үшін соңғы пікірлеріңіздің уақыты.</li>
+    </ul>
+    <p>Бұл деректер сіз өзіңіз бірдеңе жібермейінше серверге жіберілмейді. Оларды жою үшін браузер баптауларында сайт деректерін тазалаңыз.</p>
+
+    <h2>2. Сіз не жібересіз және оны кім көреді</h2>
+    <p>Пікір қалдырғанда, орын қосқанда, координаттарды түзеткенде, жолдағы кедергі туралы хабарлағанда, дауыс бергенде немесе көмек сұрағанда серверге мыналар жіберіледі:</p>
+    <ul>
+      <li>орынның координаттары — сіздің орналасқан жеріңіз емес, картадағы нүкте (егер өзіңіз тұрған жерді белгілемесеңіз);</li>
+      <li>жауаптарыңыз: тазалық, жағдайы, ақылы ма, қағаз, сабын, қолжетімділік, түсініктеме;</li>
+      <li>алғаш кіргендегі атыңыз — пікірлерде, өтінімдерде, түзетулерде және кедергі туралы хабарламаларда;</li>
+      <li>жіберілген уақыты;</li>
+      <li>құрылғының кездейсоқ кілті — бір адам көп рет дауыс бермеуі үшін дауыстарда, өтінімдерді тексеруде, хабарламалар мен көмек сұрауларда.</li>
+    </ul>
+    <p><strong>Барлығына көрінеді:</strong> аты, координаттар, жауаптар, түсініктеме және уақыт. Құрылғы кілті басқа адамдарға көрсетілмейді.</p>
+    <p>Атыңызда және түсініктемелерде телефон нөмірін, тегіңізді және басқа жеке деректерді жазбаңыз.</p>
+    <p>Көмек сұрауы 45 минут көрінеді, кедергі туралы хабарлама түріне қарай 6 сағаттан 3 күнге дейін көрінеді. Пікірлер мен орындар картаға пайдалы болғанша немесе сіз жоюды сұрағанға дейін сақталады.</p>
+
+    <h2>3. Геолокация</h2>
+    <p>Сайт сізді картада көрсету, жақын орындарды табу және жаяу маршрут құру үшін орналасқан жеріңізге рұқсат сұрайды. Бас тартуға болады — карта жұмысын жалғастырады.</p>
+    <p>Біз орналасқан жеріңізді сақтамаймыз және оны дерекқорымызға жібермейміз. Бірақ:</p>
+    <ul>
+      <li>маршрут құрғанда басталу және аяқталу нүктелері маршрут қызметіне жіберіледі;</li>
+      <li>ауа райы карта көрсетіп тұрған нүкте үшін сұралады. Карта сізге ілесіп тұрса, бұл шамамен сіздің орналасқан жеріңіз.</li>
+    </ul>
+
+    <h2>4. Үшінші тарап қызметтері</h2>
+    <p>Сайт жұмыс істегенде браузер төмендегі серверлерге жүгінеді. Олардың әрқайсысы IP-мекенжайыңызды және браузердің техникалық деректерін көреді және оларды өз ережелері бойынша өңдейді.</p>
+    <table class="services">
+      <thead><tr><th>Қызмет</th><th>Не үшін</th></tr></thead>
+      <tbody>
+        <tr><td>GitHub Pages (GitHub, Inc.)</td><td>сайтты орналастыру</td></tr>
+        <tr><td>Supabase</td><td>пікірлер, өтінімдер және дауыстар дерекқоры</td></tr>
+        <tr><td>Google (gstatic.com)</td><td>сайттың графикалық қозғалтқышы мен қаріптерін жүктеу</td></tr>
+        <tr><td>OpenStreetMap Foundation</td><td>карта негізі</td></tr>
+        <tr><td>Esri (arcgisonline.com)</td><td>спутниктік суреттер, егер оларды қоссаңыз</td></tr>
+        <tr><td>FOSSGIS e.V. (routing.openstreetmap.de)</td><td>жаяу маршруттар</td></tr>
+        <tr><td>Open-Meteo</td><td>ауа райы</td></tr>
+        <tr><td>Wikimedia Commons</td><td>орындардың суреттері</td></tr>
+      </tbody>
+    </table>
+    <p class="note">Орындар туралы деректер OpenStreetMap-тен алынған: © OpenStreetMap қатысушылары, ODbL лицензиясы.</p>
+
+    <h2>5. Біз не істемейміз</h2>
+    <p>Деректерді сатпаймыз және жарнама үшін бермейміз. Аналитика мен бақылауға арналған cookie қоспаймыз. Пайдаланушылар профильдерін жасамаймыз.</p>
+
+    <h2>6. Деректерді қалай жоюға немесе түзетуге болады</h2>
+    <ul>
+      <li><strong>Құрылғыдағы деректер:</strong> браузер баптауларында njlahetbl.github.io сайтының деректерін тазалаңыз.</li>
+      <li><strong>Жіберілген пікірлер мен өтінімдер:</strong> бізге жазыңыз. Орынды, шамамен уақытын және қандай атпен жібергеніңізді көрсетіңіз — біз жазбаны жоямыз немесе түзетеміз.</li>
+    </ul>
+
+    <h2>7. Байланыс</h2>
+    <p>Сұрақтар мен жою туралы өтініштер: <a href="https://github.com/nJlaHeTbl/TMaps/issues" rel="noopener">TMaps жобасының GitHub Issues беті</a>. Ондағы хабарламалар барлығына көрінеді, сондықтан оларға жеке деректерді жазбаңыз.</p>
+
+    <h2>8. Өзгерістер</h2>
+    <p>Саясат өзгерсе, біз оны осы бетте жаңартып, жоғарыдағы күнді өзгертеміз.</p>
+  </article>
+
+  <!-- ===================== EN ===================== -->
+  <article lang="en" data-lang-block="en" hidden>
+    <h1>Privacy policy</h1>
+    <p class="updated">Effective from 25 November 2026</p>
+    <p>TMaps is a free walking map of toilets, drinking water and charging points in Kazakhstan. This page explains in plain words what data the site uses, where it goes and how to delete it.</p>
+
+    <div class="summary">
+      <ul>
+        <li>No sign-up. We never ask for a phone number, email or password.</li>
+        <li>No ads, no analytics and no tracking cookies.</li>
+        <li>Reviews, submissions and reports you send are public, together with the name you entered.</li>
+        <li>Location is used only after you allow it, and we do not store it.</li>
+      </ul>
+    </div>
+
+    <h2>1. What stays on your device</h2>
+    <p>Your browser storage keeps:</p>
+    <ul>
+      <li>the name you entered on first visit;</li>
+      <li>a random device key — a string of characters not linked to who you are;</li>
+      <li>your saved places and the history of your submissions;</li>
+      <li>theme, language and map style;</li>
+      <li>the time of your latest reviews, to prevent duplicates.</li>
+    </ul>
+    <p>None of this leaves your device until you send something yourself. To delete it, clear this site's data in your browser settings.</p>
+
+    <h2>2. What you send and who can see it</h2>
+    <p>When you leave a review, add a place, correct a location, report an obstacle on a path, vote or ask for help, the server receives:</p>
+    <ul>
+      <li>the coordinates of the place — a point on the map, not your position (unless you marked the spot where you stand);</li>
+      <li>your answers: cleanliness, condition, fee, paper, soap, accessibility, comment;</li>
+      <li>the name from your first visit — on reviews, submissions, corrections and obstacle reports;</li>
+      <li>the time it was sent;</li>
+      <li>the random device key — on votes, submission checks, reports and help requests, so one person cannot vote many times.</li>
+    </ul>
+    <p><strong>Public:</strong> name, coordinates, answers, comment and time. The device key is never shown to other people.</p>
+    <p>Please do not put your phone number, surname or other personal details in your name or comments.</p>
+    <p>A help request is visible for 45 minutes; an obstacle report for 6 hours to 3 days depending on its type. Reviews and places are kept while they are useful for the map, or until you ask us to delete them.</p>
+
+    <h2>3. Location</h2>
+    <p>The site asks for your location to show you on the map, find nearby places and build a walking route. You can say no — the map keeps working.</p>
+    <p>We do not store your location or send it to our database. However:</p>
+    <ul>
+      <li>when you build a route, its start and end points are sent to the routing service;</li>
+      <li>weather is requested for the point the map is showing. If the map is following you, that is roughly your location.</li>
+    </ul>
+
+    <h2>4. Third-party services</h2>
+    <p>While the site runs, your browser contacts the servers below. Each of them sees your IP address and technical browser data and handles it under its own terms.</p>
+    <table class="services">
+      <thead><tr><th>Service</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>GitHub Pages (GitHub, Inc.)</td><td>hosting the site</td></tr>
+        <tr><td>Supabase</td><td>database of reviews, submissions and votes</td></tr>
+        <tr><td>Google (gstatic.com)</td><td>loading the site's graphics engine and fonts</td></tr>
+        <tr><td>OpenStreetMap Foundation</td><td>base map</td></tr>
+        <tr><td>Esri (arcgisonline.com)</td><td>satellite imagery, if you turn it on</td></tr>
+        <tr><td>FOSSGIS e.V. (routing.openstreetmap.de)</td><td>walking routes</td></tr>
+        <tr><td>Open-Meteo</td><td>weather</td></tr>
+        <tr><td>Wikimedia Commons</td><td>photos of places</td></tr>
+      </tbody>
+    </table>
+    <p class="note">Place data comes from OpenStreetMap: © OpenStreetMap contributors, ODbL licence.</p>
+
+    <h2>5. What we do not do</h2>
+    <p>We do not sell data or share it for advertising. We do not use analytics or tracking cookies. We do not build user profiles.</p>
+
+    <h2>6. How to delete or correct your data</h2>
+    <ul>
+      <li><strong>Data on your device:</strong> clear the data of njlahetbl.github.io in your browser settings.</li>
+      <li><strong>Reviews and submissions you sent:</strong> write to us with the place, the approximate time and the name you used — we will delete or correct the entry.</li>
+    </ul>
+
+    <h2>7. Contact</h2>
+    <p>Questions and deletion requests: <a href="https://github.com/nJlaHeTbl/TMaps/issues" rel="noopener">TMaps project on GitHub Issues</a>. Messages there are public, so please do not include personal details.</p>
+
+    <h2>8. Changes</h2>
+    <p>If this policy changes, we will update it on this page and change the date at the top.</p>
+  </article>
+</main>
+<script>
+  (function () {
+    var supported = ['ru', 'kk', 'en'];
+    var titles = {
+      ru: 'TMaps — политика конфиденциальности',
+      kk: 'TMaps — құпиялылық саясаты',
+      en: 'TMaps — privacy policy'
+    };
+    function pick() {
+      var fromUrl = new URLSearchParams(location.search).get('lang');
+      if (supported.indexOf(fromUrl) !== -1) return fromUrl;
+      var langs = navigator.languages || [navigator.language || 'ru'];
+      for (var i = 0; i < langs.length; i++) {
+        var code = String(langs[i]).toLowerCase().slice(0, 2);
+        if (code === 'kk') return 'kk';
+        if (code === 'ru') return 'ru';
+        if (code === 'en') return 'en';
+      }
+      return 'ru';
+    }
+    function apply(lang, updateUrl) {
+      document.documentElement.lang = lang;
+      document.title = titles[lang];
+      document.querySelectorAll('[data-lang-block]').forEach(function (el) {
+        el.hidden = el.getAttribute('data-lang-block') !== lang;
+      });
+      document.querySelectorAll('[data-lang]').forEach(function (btn) {
+        btn.setAttribute('aria-pressed', String(btn.getAttribute('data-lang') === lang));
+      });
+      if (updateUrl && history.replaceState) {
+        var url = new URL(location.href);
+        url.searchParams.set('lang', lang);
+        history.replaceState(null, '', url);
+      }
+    }
+    document.querySelectorAll('[data-lang]').forEach(function (btn) {
+      btn.addEventListener('click', function () { apply(btn.getAttribute('data-lang'), true); });
+    });
+    apply(pick(), false);
+  })();
+</script>
+</body>
+</html>
