@@ -278,7 +278,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   static const _welcomeSeenKey = 'welcome_seen';
   static const _legalConsentKey = 'legal_consent_version';
-  static const _legalConsentVersion = '2026-11-25';
+  static const _legalConsentVersion = '2026-11-26';
   static const _anonymousName = 'Аноним';
 
   bool isAddingToilet = false;

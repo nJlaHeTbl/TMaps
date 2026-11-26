@@ -37,6 +37,7 @@ node_modules/
 .dev.vars
 .wrangler/
 backend/data/*.json
+backend/data/*.sql
 !backend/data/.gitkeep
 
 # Symbolication related

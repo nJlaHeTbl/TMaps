@@ -13,5 +13,5 @@ ALLOWED_ORIGINS = "https://njlahetbl.github.io,http://localhost:3000,http://loca
 [[d1_databases]]
 binding = "DB"
 database_name = "tmaps-community"
-database_id = "REPLACE_WITH_CLOUDFLARE_D1_DATABASE_ID"
+database_id = "303bf034-596c-4b54-a958-22fcc79ac316"
 migrations_dir = "migrations"
