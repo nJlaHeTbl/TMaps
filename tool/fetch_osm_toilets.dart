@@ -158,6 +158,7 @@ Future<void> main() async {
       'opening_hours': tags['opening_hours'],
       'wikimedia_commons': tags['wikimedia_commons'],
       'image': tags['image'],
+      'wikidata': tags['wikidata'],
       'has_paper': tags['toilets:paper_supplied'],
       'has_soap': tags['handwashing:soap'],
       'phone_charging': hasPhoneCharging,
