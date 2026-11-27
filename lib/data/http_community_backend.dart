@@ -6,12 +6,18 @@ import '../core/place_info.dart';
 import 'community_backend.dart';
 
 final class HttpCommunityBackend implements CommunityBackend {
-  HttpCommunityBackend({required String baseUrl, http.Client? client})
-    : _baseUrl = baseUrl.replaceFirst(RegExp(r'/$'), ''),
-      _client = client ?? http.Client();
+  HttpCommunityBackend({
+    required String baseUrl,
+    http.Client? client,
+    this.turnstileToken,
+  }) : _baseUrl = baseUrl.replaceFirst(RegExp(r'/$'), ''),
+       _client = client ?? http.Client();
 
   final String _baseUrl;
   final http.Client _client;
+
+  /// Supplies a fresh Cloudflare Turnstile token for anti-bot checks.
+  final Future<String?> Function()? turnstileToken;
 
   @override
   Future<List<Map<String, dynamic>>> fetchPlaces() =>
@@ -59,7 +65,7 @@ final class HttpCommunityBackend implements CommunityBackend {
     required String deviceKey,
     String? comment,
   }) async {
-    final payload = await _send('/api/submissions', {
+    final payload = await _send('/api/submissions', protected: true, {
       'lat': latitude,
       'lng': longitude,
       'username': username,
@@ -96,7 +102,7 @@ final class HttpCommunityBackend implements CommunityBackend {
     required String accessType,
     String? comment,
   }) async {
-    final payload = await _send('/api/reports', {
+    final payload = await _send('/api/reports', protected: true, {
       'placeKey': placeKey,
       'lat': latitude,
       'lng': longitude,
@@ -125,7 +131,7 @@ final class HttpCommunityBackend implements CommunityBackend {
     required String username,
     String? comment,
   }) async {
-    final payload = await _send('/api/location-corrections', {
+    final payload = await _send('/api/location-corrections', protected: true, {
       'placeKey': placeKey,
       'currentLat': currentLatitude,
       'currentLng': currentLongitude,
@@ -143,7 +149,7 @@ final class HttpCommunityBackend implements CommunityBackend {
     required String voterKey,
     required bool isCurrent,
   }) async {
-    await _send('/api/votes', {
+    await _send('/api/votes', protected: true, {
       'placeKey': placeKey,
       'voterKey': voterKey,
       'isCurrent': isCurrent,
@@ -156,10 +162,11 @@ final class HttpCommunityBackend implements CommunityBackend {
     required String voterKey,
     required bool isValid,
   }) async {
-    final payload = await _send('/api/community-reviews/$submissionId/votes', {
-      'voterKey': voterKey,
-      'isValid': isValid,
-    });
+    final payload = await _send(
+      '/api/community-reviews/$submissionId/votes',
+      protected: true,
+      {'voterKey': voterKey, 'isValid': isValid},
+    );
     return Map<String, dynamic>.from(payload['review'] as Map);
   }
 
@@ -221,8 +228,21 @@ final class HttpCommunityBackend implements CommunityBackend {
 
   Future<Map<String, dynamic>> _send(
     String path,
-    Map<String, dynamic> body,
-  ) async {
+    Map<String, dynamic> body, {
+    bool protected = false,
+  }) async {
+    final tokenProvider = turnstileToken;
+    if (protected && tokenProvider != null) {
+      String? token;
+      try {
+        token = await tokenProvider();
+      } on Object {
+        throw const CommunityBackendException(
+          'Не удалось пройти проверку от ботов. Попробуй ещё раз',
+        );
+      }
+      if (token != null) body = {...body, 'turnstileToken': token};
+    }
     final response = await _client
         .post(
           Uri.parse('$_baseUrl$path'),

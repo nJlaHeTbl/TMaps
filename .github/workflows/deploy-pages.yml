@@ -39,7 +39,7 @@ jobs:
         run: flutter test
 
       - name: Build web app
-        run: flutter build web --release --base-href "/${{ github.event.repository.name }}/" --dart-define=TMAPS_API_BASE_URL=https://tmaps-community-api.tmaps-community-api.workers.dev
+        run: flutter build web --release --base-href "/${{ github.event.repository.name }}/" --dart-define=TMAPS_API_BASE_URL=https://tmaps-community-api.tmaps-community-api.workers.dev --dart-define=TMAPS_TURNSTILE_SITE_KEY=0x4AAAAAAGVYJ66ifxmifuv9
 
       - name: Configure Pages
         uses: actions/configure-pages@v6

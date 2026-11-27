@@ -319,6 +319,7 @@ async function castVote(request, env) {
   if (typeof body.isCurrent !== 'boolean') {
     throw new HttpError(400, 'Некорректный голос');
   }
+  await verifyTurnstile(body.turnstileToken, request, env);
   await enforceRateLimit(request, env, 'vote', 120, 3600);
 
   await env.DB.prepare(
@@ -338,6 +339,7 @@ async function reviewSubmission(request, env, submissionId) {
   if (typeof body.isValid !== 'boolean') {
     throw new HttpError(400, 'Некорректное подтверждение');
   }
+  await verifyTurnstile(body.turnstileToken, request, env);
   await enforceRateLimit(request, env, 'submission-review', 60, 3600);
 
   const submission = await env.DB.prepare(

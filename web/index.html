@@ -111,6 +111,55 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script>
+    // Cloudflare Turnstile: loaded only when the user sends something, so
+    // just viewing the map does not contact challenges.cloudflare.com.
+    window.tmapsTurnstile = (function () {
+      var loading = null;
+      function load() {
+        if (window.turnstile) return Promise.resolve();
+        if (!loading) {
+          loading = new Promise(function (resolve, reject) {
+            var script = document.createElement('script');
+            script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+            script.async = true;
+            script.onload = function () { resolve(); };
+            script.onerror = function () { loading = null; reject(new Error('turnstile-load')); };
+            document.head.appendChild(script);
+          });
+        }
+        return loading;
+      }
+      function getToken(siteKey) {
+        return load().then(function () {
+          return new Promise(function (resolve, reject) {
+            var box = document.createElement('div');
+            box.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647';
+            document.body.appendChild(box);
+            var widgetId = null;
+            var finished = false;
+            var timer = null;
+            function finish(callback, value) {
+              if (finished) return;
+              finished = true;
+              clearTimeout(timer);
+              try { if (widgetId !== null) window.turnstile.remove(widgetId); } catch (_) {}
+              box.remove();
+              callback(value);
+            }
+            timer = setTimeout(function () { finish(reject, new Error('turnstile-timeout')); }, 120000);
+            widgetId = window.turnstile.render(box, {
+              sitekey: siteKey,
+              appearance: 'interaction-only',
+              callback: function (token) { finish(resolve, token); },
+              'error-callback': function () { finish(reject, new Error('turnstile-error')); return true; }
+            });
+          });
+        });
+      }
+      return { getToken: getToken };
+    })();
+  </script>
+  <script>
     {{flutter_bootstrap_js}}
   </script>
 </body>

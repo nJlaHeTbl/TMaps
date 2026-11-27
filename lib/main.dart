@@ -38,6 +38,7 @@ import 'services/language_preference_service.dart';
 import 'services/map_style_preference_service.dart';
 import 'services/place_share_service.dart';
 import 'services/legal_page_link.dart';
+import 'services/turnstile_token.dart';
 import 'services/route_service.dart';
 import 'services/walking_route_controller.dart';
 import 'widgets/walking_route_panel.dart';
@@ -278,7 +279,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   static const _welcomeSeenKey = 'welcome_seen';
   static const _legalConsentKey = 'legal_consent_version';
-  static const _legalConsentVersion = '2026-11-26';
+  static const _legalConsentVersion = '2026-11-27';
   static const _anonymousName = 'Аноним';
 
   bool isAddingToilet = false;
@@ -488,7 +489,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ..addListener(_onRouteChanged);
 
     final communityBackend = AppConfig.usesCommunityApi
-        ? HttpCommunityBackend(baseUrl: AppConfig.communityApiBaseUrl)
+        ? HttpCommunityBackend(
+            baseUrl: AppConfig.communityApiBaseUrl,
+            turnstileToken: AppConfig.turnstileSiteKey.isEmpty
+                ? null
+                : () => fetchTurnstileToken(AppConfig.turnstileSiteKey),
+          )
         : SupabaseCommunityBackend(Supabase.instance.client);
     _toiletRepository = ToiletRepository(communityBackend);
 

@@ -16,6 +16,11 @@ abstract final class AppConfig {
 
   static bool get usesCommunityApi => communityApiBaseUrl.trim().isNotEmpty;
 
+  /// Public Cloudflare Turnstile site key. Empty disables the token.
+  static const turnstileSiteKey = String.fromEnvironment(
+    'TMAPS_TURNSTILE_SITE_KEY',
+  );
+
   static const routingBaseUrl =
       'https://routing.openstreetmap.de/routed-foot/route/v1/driving';
 }

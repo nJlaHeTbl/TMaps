@@ -355,4 +355,62 @@ void main() {
 
     expect(id, 9);
   });
+
+  test('attaches a fresh Turnstile token to protected writes only', () async {
+    var issued = 0;
+    final bodies = <String, Map<String, dynamic>>{};
+    final backend = HttpCommunityBackend(
+      baseUrl: 'https://api.tmaps.test',
+      turnstileToken: () async => 'token-${++issued}',
+      client: MockClient((request) async {
+        bodies[request.url.path] =
+            jsonDecode(request.body) as Map<String, dynamic>;
+        if (request.url.path == '/api/help-requests') {
+          return http.Response(
+            jsonEncode({'expiresAt': '2026-11-27T10:00:00Z'}),
+            200,
+          );
+        }
+        return http.Response(jsonEncode({'ok': true}), 200);
+      }),
+    );
+
+    await backend.castVote(
+      placeKey: 'community:1',
+      voterKey: 'voter-test-12345',
+      isCurrent: true,
+    );
+    await backend.requestPaperHelp(
+      placeKey: 'community:1',
+      latitude: 45.0,
+      longitude: 78.0,
+      requesterKey: 'voter-test-12345',
+    );
+
+    expect(bodies['/api/votes']!['turnstileToken'], 'token-1');
+    expect(
+      bodies['/api/help-requests']!.containsKey('turnstileToken'),
+      isFalse,
+    );
+    expect(issued, 1);
+  });
+
+  test('reports a clear error when the Turnstile check fails', () async {
+    final backend = HttpCommunityBackend(
+      baseUrl: 'https://api.tmaps.test',
+      turnstileToken: () async => throw StateError('widget failed'),
+      client: MockClient((request) async {
+        fail('No request should be sent without a token');
+      }),
+    );
+
+    expect(
+      backend.castVote(
+        placeKey: 'community:1',
+        voterKey: 'voter-test-12345',
+        isCurrent: true,
+      ),
+      throwsA(isA<CommunityBackendException>()),
+    );
+  });
 }
